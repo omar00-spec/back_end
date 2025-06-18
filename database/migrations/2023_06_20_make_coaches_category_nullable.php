@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-class UpdateDefaultCategoryToCoaches extends Migration
+class MakeCoachesCategoryNullable extends Migration
 {
     /**
      * Run the migrations.
@@ -13,7 +13,7 @@ class UpdateDefaultCategoryToCoaches extends Migration
      */
     public function up()
     {
-        // Vérifier si la colonne category_id n'est pas nullable
+        // Make category_id nullable
         Schema::table('coaches', function (Blueprint $table) {
             $table->unsignedBigInteger('category_id')->nullable()->change();
         });
