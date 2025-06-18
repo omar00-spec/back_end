@@ -19,9 +19,9 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:3001', 'http://localhost:8080', 'http://localhost:8000', '*'],
+    'allowed_origins' => ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:3001', 'http://localhost:8080', 'http://localhost:8000', 'https://backend-production-ea54.up.railway.app', '*'],
 
-    'allowed_origins_patterns' => [],
+    'allowed_origins_patterns' => ['#^https://.*\.railway\.app$#'],
 
     'allowed_headers' => ['*'],
 
