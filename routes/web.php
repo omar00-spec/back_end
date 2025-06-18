@@ -27,29 +27,6 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-// Route de test simple pour vérifier si l'application fonctionne
-Route::get('/test', function () {
-    return response()->json([
-        'status' => 'ok',
-        'message' => 'L\'application fonctionne correctement',
-        'timestamp' => now()->toDateTimeString(),
-        'environment' => app()->environment(),
-        'php_version' => phpversion(),
-        'laravel_version' => app()->version(),
-    ]);
-});
-
-// Route de test pour vérifier les variables d'environnement
-Route::get('/env-test', function () {
-    return response()->json([
-        'app_url' => env('APP_URL'),
-        'app_env' => env('APP_ENV'),
-        'app_debug' => env('APP_DEBUG'),
-        'db_connection' => env('DB_CONNECTION'),
-        'port' => env('PORT'),
-    ]);
-});
-
 // Routes pour la réinitialisation de mot de passe
 Route::get('/reset-password', function (\Illuminate\Http\Request $request) {
     return view('reset-password', [
