@@ -11,13 +11,19 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('users', function (Blueprint $table) {
-            $table->id();
-            $table->timestamps();
-        });
-        Schema::table('users', function (Blueprint $table) {
-            $table->string('role')->default('member'); // valeur par défaut = membre
-        });
+        if (!Schema::hasTable('users')) {
+            Schema::create('users', function (Blueprint $table) {
+                $table->id();
+                $table->timestamps();
+            });
+        }
+        
+        // Ajouter la colonne role seulement si elle n'existe pas
+        if (!Schema::hasColumn('users', 'role')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->string('role')->default('member'); // valeur par défaut = membre
+            });
+        }
     }
 
     /**
@@ -25,6 +31,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('users');
+        // Ne pas supprimer la table complètement, car d'autres migrations peuvent en dépendre
+        if (Schema::hasTable('users') && Schema::hasColumn('users', 'role')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropColumn('role');
+            });
+        }
     }
 };
