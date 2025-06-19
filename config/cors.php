@@ -19,9 +19,19 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:3001', 'http://localhost:8080', 'http://localhost:8000', 'https://backend-production-ea54.up.railway.app', '*'],
+    'allowed_origins' => [
+        'http://localhost:3000',
+        'http://localhost:5173', 
+        'http://localhost:3001', 
+        'http://localhost:8080', 
+        'http://localhost:8000', 
+        'https://backend-production-ea54.up.railway.app',
+        'https://backend-production-b4aa.up.railway.app',
+        'https://heroic-gaufre-c8e8ae.netlify.app',
+        '*'
+    ],
 
-    'allowed_origins_patterns' => ['#^https://.*\.railway\.app$#'],
+    'allowed_origins_patterns' => ['#^https://.*\.railway\.app$#', '#^https://.*\.netlify\.app$#'],
 
     'allowed_headers' => ['*'],
 
@@ -30,12 +40,5 @@ return [
     'max_age' => 0,
 
     'supports_credentials' => true,
-
-    'allowed_origins' => [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'https://https://heroic-gaufre-c8e8ae.netlify.app/',
-    '*'
-],
 ];
 
