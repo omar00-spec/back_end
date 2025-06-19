@@ -34,7 +34,7 @@ return [
     'allowed_origins' => [
     'http://localhost:3000',
     'http://localhost:3001',
-    'https://https://ittihad-el-oulfa-football-club.netlify.app', // Remplacez par votre domaine Netlify
+    'https://https://heroic-gaufre-c8e8ae.netlify.app/',
     '*'
 ],
 ];
