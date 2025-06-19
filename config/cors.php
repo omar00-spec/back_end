@@ -31,4 +31,11 @@ return [
 
     'supports_credentials' => true,
 
+    'allowed_origins' => [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'https://https://ittihad-el-oulfa-football-club.netlify.app', // Remplacez par votre domaine Netlify
+    '*'
+],
 ];
+
