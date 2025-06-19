@@ -28,17 +28,18 @@ return [
         'https://backend-production-ea54.up.railway.app',
         'https://backend-production-b4aa.up.railway.app',
         'https://heroic-gaufre-c8e8ae.netlify.app',
+        'https://railway.com',
         '*'
     ],
 
-    'allowed_origins_patterns' => ['#^https://.*\.railway\.app$#', '#^https://.*\.netlify\.app$#'],
+    'allowed_origins_patterns' => [],
 
     'allowed_headers' => ['*'],
 
-    'exposed_headers' => [],
+    'exposed_headers' => ['*'],
 
     'max_age' => 0,
 
-    'supports_credentials' => true,
+    'supports_credentials' => false,
 ];
 
