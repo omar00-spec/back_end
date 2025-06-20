@@ -2,44 +2,28 @@
 
 return [
 
-    /*
-    |--------------------------------------------------------------------------
-    | Cross-Origin Resource Sharing (CORS) Configuration
-    |--------------------------------------------------------------------------
-    |
-    | Here you may configure your settings for cross-origin resource sharing
-    | or "CORS". This determines what cross-origin operations may execute
-    | in web browsers. You are free to adjust these settings as needed.
-    |
-    | To learn more: https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
-    |
-    */
+'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+'allowed_methods' => ['*'],
 
-    'allowed_methods' => ['*'],
+'allowed_origins' => [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:3001',
+    'https://heroic-gaufre-c8e8ae.netlify.app',
+    'https://acos-football.netlify.app',
+],
 
-    'allowed_origins' => [
-        'http://localhost:3000',
-        'http://localhost:5173', 
-        'http://localhost:3001', 
-        'http://localhost:8080', 
-        'http://localhost:8000', 
-        'https://backend-production-ea54.up.railway.app',
-        'https://backend-production-b4aa.up.railway.app',
-        'https://heroic-gaufre-c8e8ae.netlify.app',
-        'https://railway.com',
-        '*'
-    ],
+// Tu peux garder ceci si tu veux autoriser tous les sous-domaines .netlify.app
+'allowed_origins_patterns' => [
+    '#^https://.*\.netlify\.app$#',
+],
 
-    'allowed_origins_patterns' => [],
+'allowed_headers' => ['*'],
 
-    'allowed_headers' => ['*'],
+'exposed_headers' => [],
 
-    'exposed_headers' => ['*'],
+'max_age' => 0,
 
-    'max_age' => 0,
-
-    'supports_credentials' => false,
+'supports_credentials' => false,
 ];
-
