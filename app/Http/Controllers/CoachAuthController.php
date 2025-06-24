@@ -29,6 +29,7 @@ class CoachAuthController extends Controller
                 'email' => 'required|string|email|unique:users,email',
                 'phone' => 'required|string',
                 'diploma' => 'nullable|string',
+                'password' => 'required|string|min:6',
             ]);
 
             if ($validator->fails()) {
@@ -70,8 +71,8 @@ class CoachAuthController extends Controller
                 $coach = $existingCoach;
             }
 
-            // Générer un mot de passe aléatoire
-            $password = Str::random(10);
+            // Utiliser le mot de passe fourni par l'utilisateur
+            $password = $request->password;
             
             // Créer un utilisateur pour ce coach
             $user = User::create([
@@ -89,7 +90,6 @@ class CoachAuthController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Coach enregistré avec succès',
-                'password' => $password,
                 'coach' => $coach,
                 'user' => $user
             ], 201);

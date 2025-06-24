@@ -30,6 +30,7 @@ class ParentAuthController extends Controller
                 'email' => 'required|string|email|unique:users,email',
                 'phone' => 'required|string',
                 'player_id' => 'nullable|integer|exists:players,id',
+                'password' => 'required|string|min:6',
             ]);
 
             if ($validator->fails()) {
@@ -63,8 +64,8 @@ class ParentAuthController extends Controller
                 }
             }
 
-            // Générer un mot de passe aléatoire
-            $password = Str::random(10);
+            // Utiliser le mot de passe fourni par l'utilisateur
+            $password = $request->password;
             
             // Créer un utilisateur pour ce parent
             $user = User::create([
@@ -82,7 +83,6 @@ class ParentAuthController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Parent enregistré avec succès',
-                'password' => $password,
                 'user' => $user,
                 'registration' => $registration
             ], 201);

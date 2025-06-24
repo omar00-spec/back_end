@@ -31,6 +31,7 @@ class PlayerAuthController extends Controller
                 'firstname' => 'required|string',
                 'lastname' => 'required|string',
                 'email' => 'required|string|email',
+                'password' => 'required|string|min:6',
             ]);
 
             if ($validator->fails()) {
@@ -179,8 +180,8 @@ class PlayerAuthController extends Controller
                 ], 409);
             }
 
-            // Générer un mot de passe aléatoire
-            $password = Str::random(10);
+            // Utiliser le mot de passe fourni par l'utilisateur
+            $password = $request->password;
 
             // Créer un compte utilisateur avec l'email fourni
             $user = User::create([
@@ -210,7 +211,6 @@ class PlayerAuthController extends Controller
                 'success' => true,
                 'message' => 'Compte créé avec succès',
                 'user' => $user,
-                'password' => $password, // Envoyer le mot de passe généré (dans un vrai environnement, envoyez-le par email)
                 'token' => $token
             ], 201);
         } catch (\Exception $e) {
