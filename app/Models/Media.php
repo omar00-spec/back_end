@@ -9,7 +9,17 @@ class Media extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['category_id', 'type', 'title', 'file_path'];
+    protected $fillable = [
+        'category_id', 
+        'type', 
+        'title', 
+        'description', 
+        'file_path',
+        'url',
+        'public_id',
+        'format',
+        'size'
+    ];
 
     public function category()
     {
