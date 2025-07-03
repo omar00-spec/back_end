@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Media;
 use Illuminate\Http\Request;
-use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
 
 class MediaController extends Controller
 {
@@ -27,160 +26,42 @@ class MediaController extends Controller
 
         $media = $query->get();
         
-        // Pas besoin de formater les URLs car Cloudinary fournit des URLs complètes
-        // Les anciennes entrées continueront d'utiliser formatMediaUrl
+        // Formater les URLs des fichiers pour chaque média
+        foreach ($media as $item) {
+            $this->formatMediaUrl($item);
+        }
 
         return $media;
     }
 
     public function store(Request $request)
     {
-        $request->validate([
-            'file' => 'required|file|mimes:jpg,jpeg,png,mp4,mov|max:20480',
-            'title' => 'required',
-            'type' => 'required|in:photo,video',
-            'category_id' => 'nullable|exists:categories,id'
-        ]);
-        
-        try {
-            $file = $request->file('file');
-            
-            // Debug - Log des informations avant l'upload
-            \Log::info('Tentative d\'upload sur Cloudinary', [
-                'file_name' => $file->getClientOriginalName(),
-                'file_size' => $file->getSize(),
-                'file_type' => $file->getMimeType()
-            ]);
-            
-            // Upload sur Cloudinary avec try/catch supplémentaire pour capturer l'erreur spécifique à Cloudinary
-            try {
-                $uploadedFileUrl = cloudinary()->upload($file->getRealPath(), [
-                    'folder' => 'acos_football/' . $request->type . 's',
-                    'resource_type' => 'auto'
-                ])->getSecurePath();
-                
-                \Log::info('Upload Cloudinary réussi', ['url' => $uploadedFileUrl]);
-            } catch (\Exception $cloudinaryError) {
-                \Log::error('Erreur Cloudinary spécifique', [
-                    'message' => $cloudinaryError->getMessage(),
-                    'trace' => $cloudinaryError->getTraceAsString()
-                ]);
-                throw $cloudinaryError; // Relancer pour être capturé par le catch externe
-            }
-            
-            // Créer l'entrée dans la base de données
-            $media = new Media();
-            $media->title = $request->title;
-            $media->type = $request->type;
-            $media->category_id = $request->category_id;
-            $media->file_path = $uploadedFileUrl; // URL Cloudinary
-            $media->save();
-            
-            \Log::info('Média sauvegardé en BDD', ['id' => $media->id, 'url' => $media->file_path]);
-            
-            return response()->json([
-                'message' => 'Média téléchargé avec succès',
-                'media' => $media
-            ], 201);
-        } catch (\Exception $e) {
-            \Log::error('Erreur lors du téléchargement du média', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
-            return response()->json([
-                'message' => 'Erreur lors du téléchargement du média',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        $media = Media::create($request->all());
+        $this->formatMediaUrl($media);
+        return $media;
     }
 
     public function show(Media $media)
     {
         $media = $media->load('category');
-        
-        // Si ce n'est pas déjà une URL Cloudinary, formatez-la avec la méthode existante
-        if (!$this->isCloudinaryUrl($media->file_path)) {
-            $this->formatMediaUrl($media);
-        }
-        
+        $this->formatMediaUrl($media);
         return $media;
     }
 
     public function update(Request $request, $id)
     {
         $media = Media::findOrFail($id);
-        
-        try {
-            if ($request->hasFile('file')) {
-                $file = $request->file('file');
-                
-                // Debug - Log des informations avant l'update
-                \Log::info('Tentative de mise à jour sur Cloudinary', [
-                    'media_id' => $id,
-                    'file_name' => $file->getClientOriginalName(),
-                    'file_size' => $file->getSize(),
-                    'file_type' => $file->getMimeType()
-                ]);
-                
-                // Si un nouveau fichier est téléchargé, supprimer l'ancien sur Cloudinary
-                if ($this->isCloudinaryUrl($media->file_path)) {
-                    $this->deleteFromCloudinary($media->file_path);
-                }
-                
-                // Upload sur Cloudinary avec try/catch
-                try {
-                    $uploadedFileUrl = cloudinary()->upload($file->getRealPath(), [
-                        'folder' => 'acos_football/' . ($request->type ?? $media->type) . 's',
-                        'resource_type' => 'auto'
-                    ])->getSecurePath();
-                    
-                    \Log::info('Mise à jour Cloudinary réussie', ['url' => $uploadedFileUrl]);
-                    
-                    // Mettre à jour le chemin
-                    $media->file_path = $uploadedFileUrl;
-                } catch (\Exception $cloudinaryError) {
-                    \Log::error('Erreur Cloudinary lors de la mise à jour', [
-                        'message' => $cloudinaryError->getMessage(),
-                        'trace' => $cloudinaryError->getTraceAsString()
-                    ]);
-                    throw $cloudinaryError;
-                }
-            }
-            
-            // Mettre à jour les autres champs
-            $media->title = $request->title ?? $media->title;
-            $media->type = $request->type ?? $media->type;
-            $media->category_id = $request->category_id ?? $media->category_id;
-            $media->save();
-            
-            \Log::info('Média mis à jour en BDD', ['id' => $media->id, 'url' => $media->file_path]);
+        $media->update($request->all());
+        $this->formatMediaUrl($media);
 
-            return response()->json([
-                'message' => 'Média mis à jour avec succès !',
-                'media' => $media
-            ]);
-        } catch (\Exception $e) {
-            \Log::error('Erreur lors de la mise à jour du média', [
-                'media_id' => $id,
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
-            return response()->json([
-                'message' => 'Erreur lors de la mise à jour du média',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'message' => 'Média mis à jour avec succès !',
+            'media' => $media
+        ]);
     }
 
     public function destroy(Media $media)
     {
-        // Supprimer de Cloudinary si c'est une URL Cloudinary
-        if ($this->isCloudinaryUrl($media->file_path)) {
-            $this->deleteFromCloudinary($media->file_path);
-        }
-        
         $media->delete();
         return response()->noContent();
     }
@@ -195,11 +76,9 @@ class MediaController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
             
-        // Formater les URLs des fichiers qui ne sont pas déjà sur Cloudinary
+        // Formater les URLs des fichiers
         foreach ($photos as $photo) {
-            if (!$this->isCloudinaryUrl($photo->file_path)) {
-                $this->formatMediaUrl($photo);
-            }
+            $this->formatMediaUrl($photo);
         }
 
         return $photos;
@@ -215,69 +94,12 @@ class MediaController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
             
-        // Formater les URLs des fichiers qui ne sont pas déjà sur Cloudinary
+        // Formater les URLs des fichiers
         foreach ($videos as $video) {
-            if (!$this->isCloudinaryUrl($video->file_path)) {
-                $this->formatMediaUrl($video);
-            }
+            $this->formatMediaUrl($video);
         }
 
         return $videos;
-    }
-
-    /**
-     * Vérifie si l'URL est une URL Cloudinary
-     */
-    private function isCloudinaryUrl($url)
-    {
-        return strpos($url, 'cloudinary.com') !== false;
-    }
-
-    /**
-     * Supprime un fichier de Cloudinary
-     */
-    private function deleteFromCloudinary($url)
-    {
-        try {
-            // Extraire l'ID public du fichier de l'URL
-            $parts = parse_url($url);
-            if (!isset($parts['path'])) {
-                \Log::warning('URL Cloudinary invalide pour la suppression', ['url' => $url]);
-                return false;
-            }
-            
-            $path = $parts['path'];
-            $pathParts = explode('/', $path);
-            
-            // Trouver les parties pertinentes (après /upload/)
-            $uploadIndex = array_search('upload', $pathParts);
-            if ($uploadIndex !== false) {
-                // Construire le public_id en prenant tout après "upload"
-                $publicId = implode('/', array_slice($pathParts, $uploadIndex + 2));
-                
-                // Enlever l'extension du fichier pour obtenir le public_id correct
-                $publicId = pathinfo($publicId, PATHINFO_DIRNAME) . '/' . pathinfo($publicId, PATHINFO_FILENAME);
-                $publicId = ltrim($publicId, '/'); // Enlever le slash initial s'il y en a un
-                
-                \Log::info('Tentative de suppression sur Cloudinary', ['public_id' => $publicId]);
-                
-                // Supprimer le fichier avec la bonne syntaxe
-                $result = cloudinary()->destroy($publicId);
-                
-                \Log::info('Résultat de la suppression Cloudinary', ['result' => $result]);
-                return $result;
-            }
-            
-            \Log::warning('Impossible de trouver le segment "upload" dans l\'URL', ['url' => $url]);
-            return false;
-        } catch (\Exception $e) {
-            \Log::error('Erreur lors de la suppression du fichier Cloudinary', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'url' => $url
-            ]);
-            return false;
-        }
     }
 
     /**
@@ -290,11 +112,9 @@ class MediaController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
             
-        // Formater les URLs des fichiers qui ne sont pas déjà sur Cloudinary
+        // Formater les URLs des fichiers
         foreach ($media as $item) {
-            if (!$this->isCloudinaryUrl($item->file_path)) {
-                $this->formatMediaUrl($item);
-            }
+            $this->formatMediaUrl($item);
         }
 
         return $media;
@@ -302,16 +122,10 @@ class MediaController extends Controller
     
     /**
      * Formate l'URL du fichier média pour l'afficher correctement
-     * (Conservé pour compatibilité avec les anciens fichiers)
      */
     public function formatMediaUrl($item)
     {
         if (!$item->file_path) {
-            return;
-        }
-        
-        // Si c'est déjà une URL Cloudinary, ne pas la modifier
-        if ($this->isCloudinaryUrl($item->file_path)) {
             return;
         }
         
@@ -462,111 +276,5 @@ class MediaController extends Controller
         }
         
         return false;
-    }
-    
-    /**
-     * Migrer les médias existants vers Cloudinary
-     */
-    public function migrateToCloudinary()
-    {
-        $media = Media::all();
-        $count = 0;
-        $errors = [];
-        $successes = [];
-        
-        foreach ($media as $item) {
-            // Ignorer les médias déjà sur Cloudinary
-            if ($this->isCloudinaryUrl($item->file_path)) {
-                continue;
-            }
-            
-            // Ignorer les URLs externes comme YouTube
-            if (filter_var($item->file_path, FILTER_VALIDATE_URL) && 
-                (strpos($item->file_path, 'youtube') !== false || 
-                strpos($item->file_path, 'vimeo') !== false)) {
-                continue;
-            }
-            
-            try {
-                // Essayer de récupérer le fichier local
-                $filePath = $item->file_path;
-                $fileName = basename($filePath);
-                
-                \Log::info('Tentative de migration vers Cloudinary', [
-                    'media_id' => $item->id, 
-                    'file_path' => $filePath,
-                    'file_name' => $fileName
-                ]);
-                
-                $localPath = null;
-                $possiblePaths = [
-                    public_path('storage/media/' . $fileName),
-                    storage_path('app/public/media/' . $fileName),
-                    public_path('media/' . $fileName),
-                    public_path($filePath)
-                ];
-                
-                foreach ($possiblePaths as $path) {
-                    if (file_exists($path)) {
-                        $localPath = $path;
-                        \Log::info('Fichier trouvé à l\'emplacement: ' . $localPath);
-                        break;
-                    }
-                }
-                
-                // Si le fichier local est trouvé, l'uploader sur Cloudinary
-                if ($localPath) {
-                    // Upload sur Cloudinary avec try/catch
-                    try {
-                        $uploadedFileUrl = cloudinary()->upload($localPath, [
-                            'folder' => 'acos_football/' . $item->type . 's',
-                            'resource_type' => 'auto'
-                        ])->getSecurePath();
-                        
-                        // Mettre à jour l'entrée dans la base de données
-                        $item->file_path = $uploadedFileUrl;
-                        $item->save();
-                        
-                        $successes[] = "Média ID {$item->id}: {$fileName} migré avec succès";
-                        \Log::info('Média migré avec succès', [
-                            'media_id' => $item->id, 
-                            'new_url' => $uploadedFileUrl
-                        ]);
-                        
-                        $count++;
-                    } catch (\Exception $cloudinaryError) {
-                        $errors[] = "Erreur Cloudinary pour média ID {$item->id}: " . $cloudinaryError->getMessage();
-                        \Log::error('Erreur lors de l\'upload Cloudinary pendant la migration', [
-                            'media_id' => $item->id,
-                            'error' => $cloudinaryError->getMessage()
-                        ]);
-                    }
-                } else {
-                    $errors[] = "Fichier non trouvé pour média ID {$item->id}: {$item->file_path}";
-                    \Log::warning('Fichier non trouvé pour la migration', [
-                        'media_id' => $item->id, 
-                        'file_path' => $item->file_path
-                    ]);
-                }
-            } catch (\Exception $e) {
-                $errors[] = "Erreur pour média ID {$item->id}: " . $e->getMessage();
-                \Log::error('Erreur générale lors de la migration', [
-                    'media_id' => $item->id,
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString()
-                ]);
-            }
-        }
-        
-        \Log::info('Migration terminée', [
-            'total_migrated' => $count,
-            'total_errors' => count($errors)
-        ]);
-        
-        return response()->json([
-            'message' => "{$count} médias migrés vers Cloudinary",
-            'successes' => $successes,
-            'errors' => $errors
-        ]);
     }
 }

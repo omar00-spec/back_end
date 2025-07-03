@@ -122,13 +122,7 @@ Route::get('/news-only', [NewsController::class, 'getNews']);
 // Routes spécifiques pour les médias
 Route::get('/photos', [MediaController::class, 'getPhotos']);
 Route::get('/videos', [MediaController::class, 'getVideos']);
-Route::get('/media', [MediaController::class, 'index']);
 Route::get('/media/category/{categoryId}', [MediaController::class, 'getByCategory']);
-Route::get('/media/{media}', [MediaController::class, 'show']);
-Route::post('/media', [MediaController::class, 'store']);
-Route::put('/media/{id}', [MediaController::class, 'update']);
-Route::delete('/media/{media}', [MediaController::class, 'destroy']);
-Route::post('/media/migrate-to-cloudinary', [MediaController::class, 'migrateToCloudinary']);
 
 // Routes pour l'administration des actualités/événements
 Route::prefix('admin')->group(function () {
