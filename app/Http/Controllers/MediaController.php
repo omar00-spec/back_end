@@ -159,70 +159,19 @@ class MediaController extends Controller
             return;
         }
         
-        // Pour les autres URLs (non YouTube/Vimeo)
+        // Si c'est déjà une URL complète (mais pas YouTube/Vimeo), la laisser telle quelle
         if (filter_var($item->file_path, FILTER_VALIDATE_URL)) {
             return;
         }
         
-        // Récupérer le chemin du fichier
-        $filePath = $item->file_path;
-        $fileName = basename($filePath);
+        // Récupérer le nom du fichier du chemin
+        $fileName = basename($item->file_path);
         
-        // Utiliser l'URL du backend Railway au lieu de localhost:8000
+        // URL de base du backend Railway
         $backendDomain = "https://backend-production-b4aa.up.railway.app";
         
-        // Vérifier d'abord si le fichier existe directement dans public/storage/media
-        $publicPath = public_path('storage/media/' . $fileName);
-        if (file_exists($publicPath)) {
-            $item->file_path = $backendDomain . '/storage/media/' . $fileName;
-            return;
-        }
-        
-        // Ensuite vérifier dans storage/app/public/media
-        $storagePath = storage_path('app/public/media/' . $fileName);
-        if (file_exists($storagePath)) {
-            // Copier le fichier vers public/storage/media s'il n'y est pas déjà
-            $this->ensureCopyToPublicStorage('media/' . $fileName, $fileName);
-            
-            $item->file_path = $backendDomain . '/storage/media/' . $fileName;
-            return;
-        }
-        
-        // Si on arrive ici, essayons les autres possibilités
-        $possiblePaths = [
-            // Chemin absolu
-            $filePath,
-            // Chemin relatif à media/
-            'media/' . $fileName,
-            // Chemin storage/media
-            'storage/media/' . $fileName
-        ];
-        
-        // Essayer chaque possibilité
-        foreach ($possiblePaths as $path) {
-            // Si c'est un chemin complet déjà
-            if (strpos($path, 'storage/') === 0) {
-                if (file_exists(public_path($path))) {
-                    $item->file_path = $backendDomain . '/' . $path;
-                    return;
-                }
-            } 
-            // Pour les chemins commençant par media/
-            else if (strpos($path, 'media/') === 0) {
-                $fullPath = 'storage/' . $path;
-                if (file_exists(public_path($fullPath))) {
-                    $item->file_path = $backendDomain . '/' . $fullPath;
-                    return;
-                }
-                
-                // Essayer de copier le fichier vers public/storage/media
-                $this->ensureCopyToPublicStorage($path, $fileName);
-            }
-        }
-        
-        // Si on arrive ici, aucun des chemins n'a fonctionné
-        // On retourne l'URL la plus probable
-        $item->file_path = $backendDomain . '/storage/media/' . $fileName;
+        // Construire l'URL complète avec le chemin correct vers public/storage/media
+        $item->file_path = "{$backendDomain}/public/storage/media/{$fileName}";
     }
 
     /**

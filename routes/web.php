@@ -11,6 +11,8 @@ use App\Http\Controllers\PlayerController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use App\Http\Controllers\StorageController;
+use Illuminate\Support\Facades\File;
 
 /*
 |--------------------------------------------------------------------------
@@ -90,7 +92,10 @@ Route::prefix('admin')->middleware('auth')->name('admin.')->group(function () {
     Route::delete('/players/{player}', [PlayerController::class, 'destroy'])->name('players.destroy');
 });
 
-// Route pour servir les images avec les en-têtes CORS corrects
+// Route pour servir les médias directement depuis le système de fichiers
+Route::get('/storage/media/{filename}', [StorageController::class, 'serveMedia']);
+
+// L'ancienne route est toujours là mais avec une priorité inférieure
 Route::get('/storage/{path}', function($path) {
     // Le chemin doit être public/storage/path car les fichiers sont dans public/storage/media
     $path = 'public/storage/' . $path;
@@ -121,3 +126,21 @@ Route::get('/test-media-access', function() {
         'baseUrl' => $baseUrl
     ]);
 });
+
+// Route pour servir les fichiers directement depuis public/storage/media
+Route::get('/public/storage/media/{filename}', function($filename) {
+    $path = public_path('storage/media/' . $filename);
+    
+    if (!file_exists($path)) {
+        abort(404);
+    }
+    
+    $type = File::mimeType($path);
+    
+    return response()->file($path, [
+        'Content-Type' => $type,
+        'Access-Control-Allow-Origin' => '*',
+        'Access-Control-Allow-Methods' => 'GET, OPTIONS',
+        'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Requested-With'
+    ]);
+})->where('filename', '.*');
