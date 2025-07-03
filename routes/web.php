@@ -95,40 +95,8 @@ Route::prefix('admin')->middleware('auth')->name('admin.')->group(function () {
 // Route pour servir les médias directement depuis le système de fichiers
 Route::get('/storage/media/{filename}', [StorageController::class, 'serveMedia']);
 
-// L'ancienne route est toujours là mais avec une priorité inférieure
-Route::get('/storage/{path}', function($path) {
-    // Le chemin doit être public/storage/path car les fichiers sont dans public/storage/media
-    $path = 'public/storage/' . $path;
-    
-    if (!Storage::exists($path)) {
-        abort(404);
-    }
-    
-    $file = Storage::get($path);
-    $type = Storage::mimeType($path);
-    
-    $response = response($file, 200)
-        ->header('Content-Type', $type)
-        ->header('Access-Control-Allow-Origin', '*')
-        ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
-        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-    
-    return $response;
-})->where('path', '.*')->name('storage.local');
-
-// Route de test pour vérifier l'accès aux médias
-Route::get('/test-media-access', function() {
-    $medias = \App\Models\Media::all();
-    $baseUrl = 'https://backend-production-b4aa.up.railway.app';
-    
-    return view('test-media', [
-        'medias' => $medias,
-        'baseUrl' => $baseUrl
-    ]);
-});
-
 // Route pour servir les fichiers directement depuis public/storage/media
-Route::get('/public/storage/media/{filename}', function($filename) {
+Route::get('/storage/media/{filename}', function($filename) {
     $path = public_path('storage/media/' . $filename);
     
     if (!file_exists($path)) {
@@ -144,3 +112,14 @@ Route::get('/public/storage/media/{filename}', function($filename) {
         'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Requested-With'
     ]);
 })->where('filename', '.*');
+
+// Route de test pour vérifier l'accès aux médias
+Route::get('/test-media-access', function() {
+    $medias = \App\Models\Media::all();
+    $baseUrl = 'https://backend-production-b4aa.up.railway.app';
+    
+    return view('test-media', [
+        'medias' => $medias,
+        'baseUrl' => $baseUrl
+    ]);
+});

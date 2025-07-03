@@ -167,11 +167,9 @@ class MediaController extends Controller
         // Récupérer le nom du fichier du chemin
         $fileName = basename($item->file_path);
         
-        // URL de base du backend Railway
-        $backendDomain = "https://backend-production-b4aa.up.railway.app";
-        
-        // Construire l'URL complète avec le chemin correct vers public/storage/media
-        $item->file_path = "{$backendDomain}/public/storage/media/{$fileName}";
+        // Générer l'URL complète en utilisant la fonction url() comme dans NewsController
+        // Cela va générer une URL avec le domaine actuel
+        $item->file_path = url('storage/media/' . $fileName);
     }
 
     /**

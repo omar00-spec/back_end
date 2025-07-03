@@ -22,6 +22,10 @@ class StorageController extends Controller
             $altPath = storage_path('app/public/media/' . $filename);
             if (File::exists($altPath)) {
                 // Copier le fichier vers public/storage/media s'il n'y est pas déjà
+                $dirPath = dirname($path);
+                if (!File::exists($dirPath)) {
+                    File::makeDirectory($dirPath, 0755, true);
+                }
                 File::copy($altPath, $path);
             } else {
                 return response()->json(['error' => 'Fichier non trouvé'], 404);
