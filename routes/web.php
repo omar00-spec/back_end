@@ -92,7 +92,8 @@ Route::prefix('admin')->middleware('auth')->name('admin.')->group(function () {
 
 // Route pour servir les images avec les en-têtes CORS corrects
 Route::get('/storage/{path}', function($path) {
-    $path = 'public/' . $path;
+    // Le chemin doit être public/storage/path car les fichiers sont dans public/storage/media
+    $path = 'public/storage/' . $path;
     
     if (!Storage::exists($path)) {
         abort(404);
@@ -108,4 +109,15 @@ Route::get('/storage/{path}', function($path) {
         ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     
     return $response;
-})->where('path', '.*');
+})->where('path', '.*')->name('storage.local');
+
+// Route de test pour vérifier l'accès aux médias
+Route::get('/test-media-access', function() {
+    $medias = \App\Models\Media::all();
+    $baseUrl = 'https://backend-production-b4aa.up.railway.app';
+    
+    return view('test-media', [
+        'medias' => $medias,
+        'baseUrl' => $baseUrl
+    ]);
+});
