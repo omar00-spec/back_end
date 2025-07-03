@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Media;
 use Illuminate\Http\Request;
+use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
 
 class MediaController extends Controller
 {
@@ -26,33 +27,88 @@ class MediaController extends Controller
 
         $media = $query->get();
         
-        // Formater les URLs des fichiers pour chaque média
-        foreach ($media as $item) {
-            $this->formatMediaUrl($item);
-        }
+        // Pas besoin de formater les URLs car Cloudinary fournit des URLs complètes
+        // Les anciennes entrées continueront d'utiliser formatMediaUrl
 
         return $media;
     }
 
     public function store(Request $request)
     {
-        $media = Media::create($request->all());
-        $this->formatMediaUrl($media);
-        return $media;
+        $request->validate([
+            'file' => 'required|file|mimes:jpg,jpeg,png,mp4,mov|max:20480',
+            'title' => 'required',
+            'type' => 'required|in:photo,video',
+            'category_id' => 'nullable|exists:categories,id'
+        ]);
+        
+        try {
+            $file = $request->file('file');
+            
+            // Upload sur Cloudinary
+            $uploadedFile = Cloudinary::upload($file->getRealPath(), [
+                'folder' => 'acos_football/' . $request->type . 's',
+                'resource_type' => 'auto' // Détecte automatiquement si c'est une image ou une vidéo
+            ]);
+            
+            // Créer l'entrée dans la base de données
+            $media = new Media();
+            $media->title = $request->title;
+            $media->type = $request->type;
+            $media->category_id = $request->category_id;
+            $media->file_path = $uploadedFile->getSecurePath(); // URL Cloudinary
+            $media->save();
+            
+            return response()->json([
+                'message' => 'Média téléchargé avec succès',
+                'media' => $media
+            ], 201);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Erreur lors du téléchargement du média',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function show(Media $media)
     {
         $media = $media->load('category');
-        $this->formatMediaUrl($media);
+        
+        // Si ce n'est pas déjà une URL Cloudinary, formatez-la avec la méthode existante
+        if (!$this->isCloudinaryUrl($media->file_path)) {
+            $this->formatMediaUrl($media);
+        }
+        
         return $media;
     }
 
     public function update(Request $request, $id)
     {
         $media = Media::findOrFail($id);
-        $media->update($request->all());
-        $this->formatMediaUrl($media);
+        
+        if ($request->hasFile('file')) {
+            // Si un nouveau fichier est téléchargé, supprimer l'ancien sur Cloudinary
+            if ($this->isCloudinaryUrl($media->file_path)) {
+                $this->deleteFromCloudinary($media->file_path);
+            }
+            
+            // Télécharger le nouveau fichier
+            $file = $request->file('file');
+            $uploadedFile = Cloudinary::upload($file->getRealPath(), [
+                'folder' => 'acos_football/' . $request->type . 's',
+                'resource_type' => 'auto'
+            ]);
+            
+            // Mettre à jour le chemin
+            $media->file_path = $uploadedFile->getSecurePath();
+        }
+        
+        // Mettre à jour les autres champs
+        $media->title = $request->title ?? $media->title;
+        $media->type = $request->type ?? $media->type;
+        $media->category_id = $request->category_id ?? $media->category_id;
+        $media->save();
 
         return response()->json([
             'message' => 'Média mis à jour avec succès !',
@@ -62,6 +118,11 @@ class MediaController extends Controller
 
     public function destroy(Media $media)
     {
+        // Supprimer de Cloudinary si c'est une URL Cloudinary
+        if ($this->isCloudinaryUrl($media->file_path)) {
+            $this->deleteFromCloudinary($media->file_path);
+        }
+        
         $media->delete();
         return response()->noContent();
     }
@@ -76,9 +137,11 @@ class MediaController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
             
-        // Formater les URLs des fichiers
+        // Formater les URLs des fichiers qui ne sont pas déjà sur Cloudinary
         foreach ($photos as $photo) {
-            $this->formatMediaUrl($photo);
+            if (!$this->isCloudinaryUrl($photo->file_path)) {
+                $this->formatMediaUrl($photo);
+            }
         }
 
         return $photos;
@@ -94,12 +157,51 @@ class MediaController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
             
-        // Formater les URLs des fichiers
+        // Formater les URLs des fichiers qui ne sont pas déjà sur Cloudinary
         foreach ($videos as $video) {
-            $this->formatMediaUrl($video);
+            if (!$this->isCloudinaryUrl($video->file_path)) {
+                $this->formatMediaUrl($video);
+            }
         }
 
         return $videos;
+    }
+
+    /**
+     * Vérifie si l'URL est une URL Cloudinary
+     */
+    private function isCloudinaryUrl($url)
+    {
+        return strpos($url, 'cloudinary.com') !== false;
+    }
+
+    /**
+     * Supprime un fichier de Cloudinary
+     */
+    private function deleteFromCloudinary($url)
+    {
+        try {
+            // Extraire l'ID public du fichier de l'URL
+            $parts = parse_url($url);
+            $path = $parts['path'];
+            $pathParts = explode('/', $path);
+            
+            // Trouver les parties pertinentes (après /upload/)
+            $uploadIndex = array_search('upload', $pathParts);
+            if ($uploadIndex !== false) {
+                $publicId = implode('/', array_slice($pathParts, $uploadIndex + 2));
+                // Enlever l'extension du fichier
+                $publicId = pathinfo($publicId, PATHINFO_FILENAME);
+                
+                // Supprimer le fichier
+                Cloudinary::destroy($publicId);
+                return true;
+            }
+        } catch (\Exception $e) {
+            \Log::error('Erreur lors de la suppression du fichier Cloudinary: ' . $e->getMessage());
+        }
+        
+        return false;
     }
 
     /**
@@ -112,9 +214,11 @@ class MediaController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
             
-        // Formater les URLs des fichiers
+        // Formater les URLs des fichiers qui ne sont pas déjà sur Cloudinary
         foreach ($media as $item) {
-            $this->formatMediaUrl($item);
+            if (!$this->isCloudinaryUrl($item->file_path)) {
+                $this->formatMediaUrl($item);
+            }
         }
 
         return $media;
@@ -122,10 +226,16 @@ class MediaController extends Controller
     
     /**
      * Formate l'URL du fichier média pour l'afficher correctement
+     * (Conservé pour compatibilité avec les anciens fichiers)
      */
     public function formatMediaUrl($item)
     {
         if (!$item->file_path) {
+            return;
+        }
+        
+        // Si c'est déjà une URL Cloudinary, ne pas la modifier
+        if ($this->isCloudinaryUrl($item->file_path)) {
             return;
         }
         
@@ -276,5 +386,73 @@ class MediaController extends Controller
         }
         
         return false;
+    }
+    
+    /**
+     * Migrer les médias existants vers Cloudinary
+     */
+    public function migrateToCloudinary()
+    {
+        $media = Media::all();
+        $count = 0;
+        $errors = [];
+        
+        foreach ($media as $item) {
+            // Ignorer les médias déjà sur Cloudinary
+            if ($this->isCloudinaryUrl($item->file_path)) {
+                continue;
+            }
+            
+            // Ignorer les URLs externes comme YouTube
+            if (filter_var($item->file_path, FILTER_VALIDATE_URL) && 
+                (strpos($item->file_path, 'youtube') !== false || 
+                strpos($item->file_path, 'vimeo') !== false)) {
+                continue;
+            }
+            
+            try {
+                // Essayer de récupérer le fichier local
+                $filePath = $item->file_path;
+                $fileName = basename($filePath);
+                
+                $localPath = null;
+                $possiblePaths = [
+                    public_path('storage/media/' . $fileName),
+                    storage_path('app/public/media/' . $fileName),
+                    public_path('media/' . $fileName),
+                    public_path($filePath)
+                ];
+                
+                foreach ($possiblePaths as $path) {
+                    if (file_exists($path)) {
+                        $localPath = $path;
+                        break;
+                    }
+                }
+                
+                // Si le fichier local est trouvé, l'uploader sur Cloudinary
+                if ($localPath) {
+                    $uploadedFile = Cloudinary::upload($localPath, [
+                        'folder' => 'acos_football/' . $item->type . 's',
+                        'resource_type' => 'auto'
+                    ]);
+                    
+                    // Mettre à jour l'entrée dans la base de données
+                    $item->file_path = $uploadedFile->getSecurePath();
+                    $item->save();
+                    
+                    $count++;
+                } else {
+                    $errors[] = "Fichier non trouvé pour média ID {$item->id}: {$item->file_path}";
+                }
+            } catch (\Exception $e) {
+                $errors[] = "Erreur pour média ID {$item->id}: " . $e->getMessage();
+            }
+        }
+        
+        return response()->json([
+            'message' => "{$count} médias migrés vers Cloudinary",
+            'errors' => $errors
+        ]);
     }
 }

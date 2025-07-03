@@ -77,15 +77,6 @@ class NewsController extends Controller
             $file = $request->file('image');
             $filename = 'news_' . Str::random(10) . '_' . time() . '.' . $file->getClientOriginalExtension();
             
-            // S'assurer que les répertoires existent
-            if (!Storage::disk('public')->exists('news')) {
-                Storage::disk('public')->makeDirectory('news');
-            }
-            
-            if (!file_exists(public_path('storage/news'))) {
-                mkdir(public_path('storage/news'), 0755, true);
-            }
-            
             // Sauvegarder l'image dans storage/app/public/news
             $path = $file->storeAs('news', $filename, 'public');
             
@@ -93,13 +84,14 @@ class NewsController extends Controller
             $sourcePath = storage_path('app/public/news/' . $filename);
             $destPath = public_path('storage/news/' . $filename);
             
-            // Vérifier que le fichier source existe
+            // Créer le répertoire de destination s'il n'existe pas
+            if (!file_exists(dirname($destPath))) {
+                mkdir(dirname($destPath), 0755, true);
+            }
+            
+            // Copier le fichier
             if (file_exists($sourcePath)) {
-                // Copier le fichier
                 copy($sourcePath, $destPath);
-            } else {
-                // Si le fichier source n'existe pas, essayer de le sauvegarder directement
-                $file->move(public_path('storage/news'), $filename);
             }
             
             // Sauvegarder le chemin de l'image dans la base de données
@@ -195,18 +187,14 @@ class NewsController extends Controller
         
         // Traiter l'upload d'image si présent
         if ($request->hasFile('image')) {
-            // Supprimer l'ancienne image si elle existe
+            // Supprimer l'ancienne image si elle existe et n'est pas une URL externe
             if ($news->image && !filter_var($news->image, FILTER_VALIDATE_URL)) {
-                // Nettoyer le chemin d'image
-                $oldImagePath = $news->image;
+                // Nettoyer le chemin d'image pour éviter les erreurs de caractères spéciaux
+                $cleanImagePath = trim($news->image);
+                Storage::disk('public')->delete($cleanImagePath);
                 
-                // Supprimer de storage/app/public
-                if (Storage::disk('public')->exists($oldImagePath)) {
-                    Storage::disk('public')->delete($oldImagePath);
-                }
-                
-                // Supprimer de public/storage
-                $oldPublicPath = public_path('storage/' . $oldImagePath);
+                // Supprimer également l'image du répertoire public/storage si elle existe
+                $oldPublicPath = public_path('storage/' . $cleanImagePath);
                 if (file_exists($oldPublicPath)) {
                     unlink($oldPublicPath);
                 }
@@ -214,16 +202,7 @@ class NewsController extends Controller
             
             // Générer un nom unique pour la nouvelle image
             $file = $request->file('image');
-            $filename = 'news_' . Str::random(10) . '_' . time() . '.' . $file->getClientOriginalExtension();
-            
-            // S'assurer que les répertoires existent
-            if (!Storage::disk('public')->exists('news')) {
-                Storage::disk('public')->makeDirectory('news');
-            }
-            
-            if (!file_exists(public_path('storage/news'))) {
-                mkdir(public_path('storage/news'), 0755, true);
-            }
+            $filename = 'news_' . $id . '_' . Str::random(10) . '_' . time() . '.' . $file->getClientOriginalExtension();
             
             // Sauvegarder l'image dans storage/app/public/news
             $path = $file->storeAs('news', $filename, 'public');
@@ -232,28 +211,48 @@ class NewsController extends Controller
             $sourcePath = storage_path('app/public/news/' . $filename);
             $destPath = public_path('storage/news/' . $filename);
             
-            // Vérifier que le fichier source existe
-            if (file_exists($sourcePath)) {
-                // Copier le fichier
-                copy($sourcePath, $destPath);
-            } else {
-                // Si le fichier source n'existe pas, essayer de le sauvegarder directement
-                $file->move(public_path('storage/news'), $filename);
-                
-                // S'assurer que le fichier existe aussi dans storage/app/public/news
-                if (!file_exists(dirname($sourcePath))) {
-                    mkdir(dirname($sourcePath), 0755, true);
-                }
-                copy($destPath, $sourcePath);
+            // Créer le répertoire de destination s'il n'existe pas
+            if (!file_exists(dirname($destPath))) {
+                mkdir(dirname($destPath), 0755, true);
             }
             
-            // Mettre à jour le chemin de l'image dans les données
+            // Copier le fichier
+            if (file_exists($sourcePath)) {
+                copy($sourcePath, $destPath);
+            }
+            
+            // Sauvegarder le chemin de l'image dans la base de données
             $updateData['image'] = $path;
         }
-        
-        // Mettre à jour l'actualité
+        // Si c'est une URL d'image externe, on la laisse telle quelle
+        elseif ($request->has('image_url') && filter_var($request->image_url, FILTER_VALIDATE_URL)) {
+            $updateData['image'] = $request->image_url;
+        }
+
         $news->update($updateData);
-        
+
+        // Si l'image était une URL et que nous voulons la sauvegarder localement
+        if ($news->image && filter_var($news->image, FILTER_VALIDATE_URL)) {
+            // Essayer de télécharger l'image depuis l'URL
+            try {
+                $imageContent = @file_get_contents($news->image);
+                if ($imageContent !== false) {
+                    $filename = 'news_' . $news->id . '_' . Str::random(5) . '_' . time() . '.jpg';
+                    $path = 'news/' . $filename;
+                    
+                    // Sauvegarder l'image téléchargée
+                    Storage::disk('public')->put($path, $imageContent);
+                    
+                    // Mettre à jour le chemin de l'image dans la base de données
+                    $news->image = $path;
+                    $news->save();
+                }
+            } catch (\Exception $e) {
+                // Ignorer les erreurs de téléchargement mais les journaliser
+                \Log::error('Erreur lors du téléchargement de l\'image: ' . $e->getMessage());
+            }
+        }
+
         return response()->json($news);
     }
 

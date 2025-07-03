@@ -159,7 +159,14 @@ return [
         Illuminate\Validation\ValidationServiceProvider::class,
         Illuminate\View\ViewServiceProvider::class,
 
-        // Application Service Providers...
+        /*
+         * Package Service Providers...
+         */
+        CloudinaryLabs\CloudinaryLaravel\CloudinaryServiceProvider::class,
+
+        /*
+         * Application Service Providers...
+         */
         App\Providers\AppServiceProvider::class,
         App\Providers\AuthServiceProvider::class,
         // App\Providers\BroadcastServiceProvider::class,
