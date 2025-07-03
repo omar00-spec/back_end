@@ -168,7 +168,6 @@ class MediaController extends Controller
         $fileName = basename($item->file_path);
         
         // Générer l'URL complète en utilisant la fonction url() comme dans NewsController
-        // Cela va générer une URL avec le domaine actuel
         $item->file_path = url('storage/media/' . $fileName);
     }
 

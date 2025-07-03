@@ -4,31 +4,33 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\Storage;
 
 class StorageController extends Controller
 {
     /**
-     * Servir un fichier média directement depuis le système de fichiers
+     * Sert un fichier média depuis storage/media
      */
     public function serveMedia($filename)
     {
-        // Chemin direct vers le fichier dans public/storage/media
+        // Chemin complet vers le fichier
         $path = public_path('storage/media/' . $filename);
         
         // Vérifier si le fichier existe
-        if (!File::exists($path)) {
-            // Si le fichier n'existe pas, essayer dans storage/app/public/media
+        if (!file_exists($path)) {
+            // Essayer de trouver le fichier dans storage/app/public/media
             $altPath = storage_path('app/public/media/' . $filename);
-            if (File::exists($altPath)) {
-                // Copier le fichier vers public/storage/media s'il n'y est pas déjà
-                $dirPath = dirname($path);
-                if (!File::exists($dirPath)) {
-                    File::makeDirectory($dirPath, 0755, true);
+            if (file_exists($altPath)) {
+                // Créer le répertoire de destination si nécessaire
+                $destDir = public_path('storage/media');
+                if (!file_exists($destDir)) {
+                    mkdir($destDir, 0755, true);
                 }
-                File::copy($altPath, $path);
+                
+                // Copier le fichier vers public/storage/media
+                copy($altPath, $path);
             } else {
-                return response()->json(['error' => 'Fichier non trouvé'], 404);
+                abort(404, 'Fichier non trouvé');
             }
         }
         
@@ -36,9 +38,8 @@ class StorageController extends Controller
         $type = File::mimeType($path);
         
         // Servir le fichier avec les en-têtes CORS appropriés
-        return Response::make(File::get($path), 200, [
+        return response()->file($path, [
             'Content-Type' => $type,
-            'Content-Disposition' => 'inline; filename="' . $filename . '"',
             'Access-Control-Allow-Origin' => '*',
             'Access-Control-Allow-Methods' => 'GET, OPTIONS',
             'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Requested-With'

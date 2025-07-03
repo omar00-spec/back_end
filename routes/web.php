@@ -92,26 +92,13 @@ Route::prefix('admin')->middleware('auth')->name('admin.')->group(function () {
     Route::delete('/players/{player}', [PlayerController::class, 'destroy'])->name('players.destroy');
 });
 
-// Route pour servir les médias directement depuis le système de fichiers
-Route::get('/storage/media/{filename}', [StorageController::class, 'serveMedia']);
-
 // Route pour servir les fichiers directement depuis public/storage/media
-Route::get('/storage/media/{filename}', function($filename) {
-    $path = public_path('storage/media/' . $filename);
-    
-    if (!file_exists($path)) {
-        abort(404);
-    }
-    
-    $type = File::mimeType($path);
-    
-    return response()->file($path, [
-        'Content-Type' => $type,
-        'Access-Control-Allow-Origin' => '*',
-        'Access-Control-Allow-Methods' => 'GET, OPTIONS',
-        'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Requested-With'
-    ]);
-})->where('filename', '.*');
+Route::get('/public/storage/media/{filename}', [StorageController::class, 'serveMedia'])
+    ->where('filename', '.*');
+
+// Route pour servir les fichiers depuis storage/media (pour la compatibilité)
+Route::get('/storage/media/{filename}', [StorageController::class, 'serveMedia'])
+    ->where('filename', '.*');
 
 // Route de test pour vérifier l'accès aux médias
 Route::get('/test-media-access', function() {
