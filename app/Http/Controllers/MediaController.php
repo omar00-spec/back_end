@@ -129,17 +129,6 @@ class MediaController extends Controller
             return;
         }
         
-        // Remplacer directement les URLs localhost par Railway
-        if (strpos($item->file_path, 'localhost:8000') !== false) {
-            $item->file_path = str_replace(
-                'http://localhost:8000', 
-                'https://backend-production-b4aa.up.railway.app',
-                $item->file_path
-            );
-            \Log::info("URL localhost remplacée: {$item->file_path}");
-            return;
-        }
-        
         // Si c'est une URL YouTube ou autre service externe, ne pas la modifier
         if (filter_var($item->file_path, FILTER_VALIDATE_URL) && 
             (strpos($item->file_path, 'youtube') !== false || 
@@ -170,7 +159,7 @@ class MediaController extends Controller
             return;
         }
         
-        // Pour les autres URLs (non YouTube/Vimeo) déjà complètes
+        // Pour les autres URLs (non YouTube/Vimeo)
         if (filter_var($item->file_path, FILTER_VALIDATE_URL)) {
             return;
         }
@@ -179,34 +168,8 @@ class MediaController extends Controller
         $filePath = $item->file_path;
         $fileName = basename($filePath);
         
-        // Utiliser l'URL de production en Railway
+        // Utiliser l'URL du backend Railway au lieu de localhost:8000
         $backendDomain = "https://backend-production-b4aa.up.railway.app";
-        
-        // En production sur Railway, ne pas faire de vérification file_exists
-        // car le code s'exécute dans un conteneur qui n'a pas nécessairement accès aux fichiers locaux
-        if (env('APP_ENV') === 'production' || strpos($backendDomain, 'railway.app') !== false) {
-            // Construction du chemin le plus probable
-            if (strpos($filePath, '/') === 0) {
-                // Si le chemin commence par un slash, l'utiliser tel quel
-                $item->file_path = $backendDomain . $filePath;
-            } else if (strpos($filePath, 'storage/') === 0) {
-                // Si le chemin commence par storage/
-                $item->file_path = $backendDomain . '/' . $filePath;
-            } else if (strpos($filePath, 'media/') === 0) {
-                // Si le chemin commence par media/
-                $item->file_path = $backendDomain . '/storage/' . $filePath;
-            } else {
-                // Dans les autres cas, on suppose qu'il s'agit d'un fichier dans media/
-                $item->file_path = $backendDomain . '/storage/media/' . $fileName;
-            }
-            
-            // Log pour debug
-            \Log::info("URL média formatée (Railway): {$item->file_path} (original: {$filePath})");
-            
-            return;
-        }
-        
-        // Environnement de développement - code existant pour les vérifications locales
         
         // Vérifier d'abord si le fichier existe directement dans public/storage/media
         $publicPath = public_path('storage/media/' . $fileName);
