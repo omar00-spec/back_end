@@ -19,8 +19,7 @@ use App\Http\Controllers\{
     CoachAuthController,
     ParentAuthController,
     PasswordResetController,
-    UploadController,
-    CloudinaryController
+    UploadController
 };
 
 Route::get('/ping', function () {
@@ -166,12 +165,6 @@ Route::get('/upload/ensure-storage-link', [App\Http\Controllers\UploadController
 Route::get('/upload/list-directories', [App\Http\Controllers\UploadController::class, 'listDirectories']);
 Route::post('/upload/create-directory', [App\Http\Controllers\UploadController::class, 'createDirectory']);
 Route::post('/upload/scan-directory', [App\Http\Controllers\UploadController::class, 'scanDirectory']);
-
-// Routes pour Cloudinary
-Route::post('/cloudinary/upload', [CloudinaryController::class, 'upload']);
-Route::get('/cloudinary/media', [CloudinaryController::class, 'getAll']);
-Route::get('/cloudinary/media/{type}', [CloudinaryController::class, 'getByType']);
-Route::delete('/cloudinary/media/{id}', [CloudinaryController::class, 'delete']);
 
 // Route de test pour lister tous les joueurs avec leur catégorie
 Route::get('/test/players', function() {
