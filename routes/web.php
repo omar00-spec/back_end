@@ -11,8 +11,6 @@ use App\Http\Controllers\PlayerController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
-use App\Http\Controllers\StorageController;
-use Illuminate\Support\Facades\File;
 
 /*
 |--------------------------------------------------------------------------
@@ -92,21 +90,22 @@ Route::prefix('admin')->middleware('auth')->name('admin.')->group(function () {
     Route::delete('/players/{player}', [PlayerController::class, 'destroy'])->name('players.destroy');
 });
 
-// Route pour servir les fichiers directement depuis public/storage/media
-Route::get('/public/storage/media/{filename}', [StorageController::class, 'serveMedia'])
-    ->where('filename', '.*');
-
-// Route pour servir les fichiers depuis storage/media (pour la compatibilité)
-Route::get('/storage/media/{filename}', [StorageController::class, 'serveMedia'])
-    ->where('filename', '.*');
-
-// Route de test pour vérifier l'accès aux médias
-Route::get('/test-media-access', function() {
-    $medias = \App\Models\Media::all();
-    $baseUrl = 'https://backend-production-b4aa.up.railway.app';
+// Route pour servir les images avec les en-têtes CORS corrects
+Route::get('/storage/{path}', function($path) {
+    $path = 'public/' . $path;
     
-    return view('test-media', [
-        'medias' => $medias,
-        'baseUrl' => $baseUrl
-    ]);
-});
+    if (!Storage::exists($path)) {
+        abort(404);
+    }
+    
+    $file = Storage::get($path);
+    $type = Storage::mimeType($path);
+    
+    $response = response($file, 200)
+        ->header('Content-Type', $type)
+        ->header('Access-Control-Allow-Origin', '*')
+        ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    
+    return $response;
+})->where('path', '.*');
