@@ -149,6 +149,7 @@ Route::prefix('admin')->group(function () {
     Route::post('/media', [App\Http\Controllers\Admin\MediaController::class, 'store']);
     Route::get('/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'show']);
     Route::put('/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'update']);
+    Route::post('/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'update']); // Route POST pour la mise à jour avec _method=PUT
     Route::delete('/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'destroy']);
 });
 
@@ -249,23 +250,22 @@ Route::get('/diagnostic/cloudinary', function() {
     $cloudinaryUrl = env('CLOUDINARY_URL');
     
     $response = [
-        'timestamp' => now()->format('Y-m-d H:i:s'),
-        'cloudinary_config' => [
-            'cloud_name' => $cloudName ?: 'Non défini',
-            'api_key' => $apiKey ? substr($apiKey, 0, 3) . '...' : 'Non défini',
-            'api_secret' => $apiSecret ? 'Défini (masqué)' : 'Non défini',
-            'cloudinary_url' => $cloudinaryUrl ? substr($cloudinaryUrl, 0, 15) . '...' : 'Non défini',
-        ],
-        'cloudinary_status' => null
+        'status' => 'checking',
+        'config' => [
+            'cloud_name' => !empty($cloudName) ? 'Défini' : 'Non défini',
+            'api_key' => !empty($apiKey) ? 'Défini' : 'Non défini',
+            'api_secret' => !empty($apiSecret) ? 'Défini' : 'Non défini',
+            'url' => !empty($cloudinaryUrl) ? 'Défini' : 'Non défini',
+        ]
     ];
-    
-    // Vérifier si l'instance Cloudinary peut être créée
-    try {
-        $cloudinary = app('cloudinary');
-        $response['cloudinary_status'] = 'OK - Instance créée avec succès';
-    } catch (\Exception $e) {
-        $response['cloudinary_status'] = 'ERREUR - ' . $e->getMessage();
-    }
     
     return response()->json($response);
 });
+
+// Routes admin pour Media
+Route::get('/admin/media', [App\Http\Controllers\Admin\MediaController::class, 'index']);
+Route::post('/admin/media', [App\Http\Controllers\Admin\MediaController::class, 'store']);
+Route::get('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'show']);
+Route::put('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'update']);
+Route::post('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'update']); // Route POST pour la mise à jour avec _method=PUT
+Route::delete('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'destroy']);
