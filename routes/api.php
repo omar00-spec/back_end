@@ -128,7 +128,7 @@ Route::get('/media/{media}', [MediaController::class, 'show']);
 Route::post('/media', [MediaController::class, 'store']);
 Route::put('/media/{id}', [MediaController::class, 'update']);
 Route::delete('/media/{media}', [MediaController::class, 'destroy']);
-Route::post('/media/migrate-to-cloudinary', [MediaController::class, 'migrateToCloudinary']);
+Route::get('/media/migrate-to-cloudinary', [MediaController::class, 'migrateToCloudinary']);
 Route::get('/media/check-storage', [MediaController::class, 'checkStorage']);
 
 // Routes pour l'administration des actualités/événements
@@ -238,4 +238,34 @@ Route::prefix('settings')->group(function () {
     Route::get('/cloudinary', [App\Http\Controllers\SettingsController::class, 'getCloudinarySettings']);
     Route::post('/cloudinary', [App\Http\Controllers\SettingsController::class, 'saveCloudinarySettings']);
     Route::post('/cloudinary/test', [App\Http\Controllers\SettingsController::class, 'testCloudinaryConnection']);
+});
+
+// Routes pour le diagnostic
+Route::get('/diagnostic/cloudinary', function() {
+    // Récupérer la configuration Cloudinary
+    $cloudName = env('CLOUDINARY_CLOUD_NAME');
+    $apiKey = env('CLOUDINARY_KEY');
+    $apiSecret = env('CLOUDINARY_SECRET');
+    $cloudinaryUrl = env('CLOUDINARY_URL');
+    
+    $response = [
+        'timestamp' => now()->format('Y-m-d H:i:s'),
+        'cloudinary_config' => [
+            'cloud_name' => $cloudName ?: 'Non défini',
+            'api_key' => $apiKey ? substr($apiKey, 0, 3) . '...' : 'Non défini',
+            'api_secret' => $apiSecret ? 'Défini (masqué)' : 'Non défini',
+            'cloudinary_url' => $cloudinaryUrl ? substr($cloudinaryUrl, 0, 15) . '...' : 'Non défini',
+        ],
+        'cloudinary_status' => null
+    ];
+    
+    // Vérifier si l'instance Cloudinary peut être créée
+    try {
+        $cloudinary = app('cloudinary');
+        $response['cloudinary_status'] = 'OK - Instance créée avec succès';
+    } catch (\Exception $e) {
+        $response['cloudinary_status'] = 'ERREUR - ' . $e->getMessage();
+    }
+    
+    return response()->json($response);
 });

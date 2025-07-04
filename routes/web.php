@@ -109,3 +109,8 @@ Route::get('/storage/{path}', function($path) {
     
     return $response;
 })->where('path', '.*');
+
+// Route pour le diagnostic Cloudinary
+Route::get('/cloudinary-diagnostic', function() {
+    return view('cloudinary-diagnostic');
+});
