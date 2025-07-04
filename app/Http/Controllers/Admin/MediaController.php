@@ -547,7 +547,54 @@ class MediaController extends Controller
     public function destroy($id)
     {
         $media = Media::findOrFail($id);
+        
+        // Récupérer le chemin du fichier avant de supprimer l'enregistrement
+        $filePath = $media->file_path;
+        
+        // Supprimer d'abord l'enregistrement de la base de données
         $media->delete();
+        
+        // Si le chemin du fichier existe, essayer de supprimer le fichier du stockage
+        if ($filePath) {
+            try {
+                // Vérifier si c'est une URL (externe) ou un chemin local
+                if (filter_var($filePath, FILTER_VALIDATE_URL)) {
+                    // Si c'est une URL externe (YouTube, etc.), on ne supprime pas de fichier
+                    \Log::info("URL externe non supprimée: {$filePath}");
+                } else {
+                    // Si c'est un chemin local, normaliser le chemin
+                    $normalizedPath = $filePath;
+                    
+                    // Si le chemin commence par 'media/', supprimer le préfixe car Storage::disk('public') pointe déjà vers ce répertoire
+                    if (strpos($normalizedPath, 'media/') === 0) {
+                        $normalizedPath = substr($normalizedPath, 6);
+                    }
+                    
+                    // Essayer de supprimer du stockage public
+                    if (Storage::disk('public')->exists($normalizedPath)) {
+                        Storage::disk('public')->delete($normalizedPath);
+                        \Log::info("Fichier supprimé du stockage public: {$normalizedPath}");
+                    } else if (Storage::disk('public')->exists('media/' . $normalizedPath)) {
+                        Storage::disk('public')->delete('media/' . $normalizedPath);
+                        \Log::info("Fichier supprimé du stockage public (avec préfixe media): media/{$normalizedPath}");
+                    } else {
+                        \Log::warning("Fichier introuvable dans le stockage public: {$normalizedPath}");
+                        
+                        // Essayer de supprimer du répertoire public/storage/media directement
+                        $publicMediaPath = public_path('storage/media/' . basename($filePath));
+                        if (file_exists($publicMediaPath)) {
+                            unlink($publicMediaPath);
+                            \Log::info("Fichier supprimé directement du répertoire public: {$publicMediaPath}");
+                        } else {
+                            \Log::warning("Fichier introuvable dans le répertoire public: {$publicMediaPath}");
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                // Enregistrer l'erreur mais ne pas échouer la suppression si le fichier ne peut pas être supprimé
+                \Log::error("Erreur lors de la suppression du fichier: " . $e->getMessage());
+            }
+        }
 
         return response()->json(null, 204);
     }
