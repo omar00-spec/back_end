@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Media;
 use Illuminate\Http\Request;
 use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
+use Illuminate\Support\Facades\Validator;
 
 class MediaController extends Controller
 {
@@ -35,33 +36,21 @@ class MediaController extends Controller
 
     public function store(Request $request)
     {
-        try {
-            // Validation des données d'entrée - Élargir les types de fichiers acceptés
-            $request->validate([
-                'file' => 'required|file|mimes:jpg,jpeg,png,mp4,mov,avi,webm,mkv,flv,wmv|max:102400',
-                'title' => 'required',
-                'type' => 'required|in:photo,video',
-                'category_id' => 'nullable|exists:categories,id'
-            ]);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            \Log::error('Validation échouée', [
-                'message' => $e->getMessage(),
-                'errors' => $e->errors()
-            ]);
+        // Validation des données
+        $validator = Validator::make($request->all(), [
+            'title' => 'required|string|max:255',
+            'type' => 'required|string|in:photo,video,document',
+            'category_id' => 'nullable|exists:categories,id',
+            'file' => 'required|file|max:20480', // 20MB max
+        ]);
+
+        if ($validator->fails()) {
             return response()->json([
                 'message' => 'Validation échouée',
-                'errors' => $e->errors()
-            ], 422);
-        } catch (\Exception $e) {
-            \Log::error('Exception lors de la validation', [
-                'message' => $e->getMessage()
-            ]);
-            return response()->json([
-                'message' => 'Erreur de validation',
-                'error' => $e->getMessage()
+                'errors' => $validator->errors()
             ], 422);
         }
-        
+
         try {
             // Récupérer le fichier
             $file = $request->file('file');
@@ -143,6 +132,9 @@ class MediaController extends Controller
                     ]
                 ];
                 
+                // Initialiser une variable pour l'URL du fichier uploadé
+                $uploadedFileUrl = null;
+                
                 // Utiliser le SDK directement
                 if (class_exists('Cloudinary\Cloudinary')) {
                     $cloudinary = new \Cloudinary\Cloudinary($config);
@@ -167,6 +159,11 @@ class MediaController extends Controller
                     throw new \Exception("Aucun SDK Cloudinary disponible");
                 }
                 
+                // Vérifier que l'URL a bien été obtenue
+                if (empty($uploadedFileUrl)) {
+                    throw new \Exception("L'URL du fichier uploadé est vide");
+                }
+                
                 \Log::info('Upload Cloudinary réussi', ['url' => $uploadedFileUrl]);
             } catch (\Exception $cloudinaryError) {
                 // Log détaillé de l'erreur Cloudinary
@@ -187,11 +184,29 @@ class MediaController extends Controller
             
             // Créer l'entrée dans la base de données
             try {
+                // Vérifier à nouveau que l'URL est définie
+                if (empty($uploadedFileUrl)) {
+                    \Log::error('URL de fichier vide avant création en BDD');
+                    return response()->json([
+                        'message' => 'URL du fichier vide, impossible de créer l\'entrée en base de données',
+                        'error' => 'empty_file_url'
+                    ], 500);
+                }
+                
                 $media = new Media();
                 $media->title = $request->title;
                 $media->type = $request->type;
                 $media->category_id = $request->category_id;
                 $media->file_path = $uploadedFileUrl; // URL Cloudinary
+                
+                // Log avant sauvegarde
+                \Log::info('Tentative de sauvegarde média en BDD', [
+                    'title' => $media->title,
+                    'type' => $media->type,
+                    'category_id' => $media->category_id,
+                    'file_path' => $media->file_path
+                ]);
+                
                 $media->save();
                 
                 \Log::info('Média sauvegardé en BDD', [
@@ -208,7 +223,13 @@ class MediaController extends Controller
             } catch (\Exception $dbError) {
                 \Log::error('Erreur lors de la sauvegarde en base de données', [
                     'error' => $dbError->getMessage(),
-                    'trace' => $dbError->getTraceAsString()
+                    'trace' => $dbError->getTraceAsString(),
+                    'media_data' => [
+                        'title' => $request->title,
+                        'type' => $request->type,
+                        'category_id' => $request->category_id,
+                        'file_path' => $uploadedFileUrl ?? 'NULL'
+                    ]
                 ]);
                 return response()->json([
                     'message' => 'Erreur lors de la sauvegarde en base de données',
