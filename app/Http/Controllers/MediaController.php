@@ -36,9 +36,9 @@ class MediaController extends Controller
     public function store(Request $request)
     {
         try {
-            // Validation des données d'entrée
+            // Validation des données d'entrée - Élargir les types de fichiers acceptés
             $request->validate([
-                'file' => 'required|file|mimes:jpg,jpeg,png,mp4,mov|max:20480',
+                'file' => 'required|file|mimes:jpg,jpeg,png,mp4,mov,avi,webm,mkv,flv,wmv|max:102400',
                 'title' => 'required',
                 'type' => 'required|in:photo,video',
                 'category_id' => 'nullable|exists:categories,id'
@@ -84,6 +84,7 @@ class MediaController extends Controller
                 'file_name' => $file->getClientOriginalName(),
                 'file_size' => $file->getSize(),
                 'file_type' => $file->getMimeType(),
+                'extension' => $file->getClientOriginalExtension(),
                 'cloudinary_config' => [
                     'cloud_name' => env('CLOUDINARY_CLOUD_NAME') ? 'Défini' : 'Non défini',
                     'api_key' => env('CLOUDINARY_KEY') ? 'Défini' : 'Non défini',
@@ -418,13 +419,45 @@ class MediaController extends Controller
 
     public function destroy(Media $media)
     {
-        // Supprimer de Cloudinary si c'est une URL Cloudinary
-        if ($this->isCloudinaryUrl($media->file_path)) {
-            $this->deleteFromCloudinary($media->file_path);
+        try {
+            \Log::info('Tentative de suppression du média', [
+                'media_id' => $media->id,
+                'media_title' => $media->title,
+                'media_path' => $media->file_path
+            ]);
+            
+            // Supprimer de Cloudinary si c'est une URL Cloudinary
+            if ($this->isCloudinaryUrl($media->file_path)) {
+                $deleteResult = $this->deleteFromCloudinary($media->file_path);
+                \Log::info('Résultat de la suppression sur Cloudinary', [
+                    'result' => $deleteResult,
+                    'media_id' => $media->id
+                ]);
+            } else {
+                \Log::info('Le média n\'est pas hébergé sur Cloudinary, suppression de l\'entrée en BDD uniquement');
+            }
+            
+            // Supprimer l'entrée de la base de données
+            $deleteResult = $media->delete();
+            
+            \Log::info('Suppression du média de la base de données', [
+                'result' => $deleteResult,
+                'media_id' => $media->id
+            ]);
+            
+            return response()->json(['message' => 'Média supprimé avec succès'], 200);
+        } catch (\Exception $e) {
+            \Log::error('Erreur lors de la suppression du média', [
+                'media_id' => $media->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'message' => 'Erreur lors de la suppression du média',
+                'error' => $e->getMessage()
+            ], 500);
         }
-        
-        $media->delete();
-        return response()->noContent();
     }
 
     /**
@@ -491,6 +524,12 @@ class MediaController extends Controller
             $path = $parts['path'];
             $pathParts = explode('/', $path);
             
+            // Déterminer si c'est une image ou une vidéo
+            $resourceType = 'image';
+            if (strpos($path, '/video/') !== false) {
+                $resourceType = 'video';
+            }
+            
             // Trouver les parties pertinentes (après /upload/)
             $uploadIndex = array_search('upload', $pathParts);
             if ($uploadIndex !== false) {
@@ -501,13 +540,55 @@ class MediaController extends Controller
                 $publicId = pathinfo($publicId, PATHINFO_DIRNAME) . '/' . pathinfo($publicId, PATHINFO_FILENAME);
                 $publicId = ltrim($publicId, '/'); // Enlever le slash initial s'il y en a un
                 
-                \Log::info('Tentative de suppression sur Cloudinary', ['public_id' => $publicId]);
+                \Log::info('Tentative de suppression sur Cloudinary', [
+                    'public_id' => $publicId,
+                    'resource_type' => $resourceType,
+                    'url' => $url
+                ]);
                 
-                // Supprimer le fichier avec la bonne syntaxe
-                $result = cloudinary()->destroy($publicId);
+                // Configurer Cloudinary
+                $cloudName = env('CLOUDINARY_CLOUD_NAME');
+                $apiKey = env('CLOUDINARY_API_KEY', env('CLOUDINARY_KEY')); // Essayer les deux variantes
+                $apiSecret = env('CLOUDINARY_API_SECRET', env('CLOUDINARY_SECRET')); // Essayer les deux variantes
                 
-                \Log::info('Résultat de la suppression Cloudinary', ['result' => $result]);
-                return $result;
+                // Vérifier la configuration
+                if (!$cloudName || !$apiKey || !$apiSecret) {
+                    \Log::error('Configuration Cloudinary manquante pour suppression', [
+                        'cloud_name' => $cloudName ? 'Défini' : 'Non défini',
+                        'api_key' => $apiKey ? 'Défini' : 'Non défini',
+                        'api_secret' => $apiSecret ? 'Défini' : 'Non défini'
+                    ]);
+                    return false;
+                }
+                
+                // Utiliser le SDK Cloudinary si disponible
+                if (class_exists('Cloudinary\Cloudinary')) {
+                    $config = [
+                        'cloud' => [
+                            'cloud_name' => $cloudName,
+                            'api_key' => $apiKey,
+                            'api_secret' => $apiSecret
+                        ]
+                    ];
+                    
+                    $cloudinary = new \Cloudinary\Cloudinary($config);
+                    $uploadApi = $cloudinary->uploadApi();
+                    $result = $uploadApi->destroy($publicId, ['resource_type' => $resourceType]);
+                    
+                    \Log::info('Résultat de la suppression Cloudinary (SDK)', ['result' => $result]);
+                    return $result;
+                }
+                // Utiliser la façade Laravel si disponible
+                elseif (class_exists('CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary')) {
+                    $result = \CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::destroy($publicId, ['resource_type' => $resourceType]);
+                    
+                    \Log::info('Résultat de la suppression Cloudinary (Façade)', ['result' => $result]);
+                    return $result;
+                }
+                else {
+                    \Log::error('Aucun SDK Cloudinary disponible pour suppression');
+                    return false;
+                }
             }
             
             \Log::warning('Impossible de trouver le segment "upload" dans l\'URL', ['url' => $url]);
