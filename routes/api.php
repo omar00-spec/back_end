@@ -231,3 +231,10 @@ Route::get('/test-email/{email}', function($email) {
         ], 500);
     }
 });
+
+// Routes pour les paramètres et la configuration
+Route::prefix('settings')->group(function () {
+    Route::get('/cloudinary', [App\Http\Controllers\SettingsController::class, 'getCloudinarySettings']);
+    Route::post('/cloudinary', [App\Http\Controllers\SettingsController::class, 'saveCloudinarySettings']);
+    Route::post('/cloudinary/test', [App\Http\Controllers\SettingsController::class, 'testCloudinaryConnection']);
+});

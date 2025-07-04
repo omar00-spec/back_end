@@ -61,18 +61,7 @@ class MediaController extends Controller
                 'file_type' => $file->getMimeType()
             ]);
             
-            // SOLUTION TEMPORAIRE: Désactiver Cloudinary et utiliser une URL fixe
-            // Stockage local du fichier pour debug
-            $fileName = time() . '_' . $file->getClientOriginalName();
-            $localPath = $file->storeAs('media', $fileName, 'public');
-            
-            // URL temporaire pour tester sans Cloudinary
-            $uploadedFileUrl = url('storage/' . $localPath);
-            
-            \Log::info('Stockage local réussi', ['path' => $localPath, 'url' => $uploadedFileUrl]);
-            
-            /*
-            // Upload sur Cloudinary - COMMENTÉ TEMPORAIREMENT
+            // Upload sur Cloudinary
             try {
                 $uploadedFileUrl = cloudinary()->upload($file->getRealPath(), [
                     'folder' => 'acos_football/' . $request->type . 's',
@@ -87,14 +76,13 @@ class MediaController extends Controller
                 ]);
                 throw $cloudinaryError; // Relancer pour être capturé par le catch externe
             }
-            */
             
             // Créer l'entrée dans la base de données
             $media = new Media();
             $media->title = $request->title;
             $media->type = $request->type;
             $media->category_id = $request->category_id;
-            $media->file_path = $uploadedFileUrl; // URL locale temporairement
+            $media->file_path = $uploadedFileUrl; // URL Cloudinary
             $media->save();
             
             \Log::info('Média sauvegardé en BDD', ['id' => $media->id, 'url' => $media->file_path]);

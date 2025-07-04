@@ -31,6 +31,12 @@ CLOUDINARY_SECRET=votre_api_secret
 CLOUDINARY_URL=cloudinary://${CLOUDINARY_KEY}:${CLOUDINARY_SECRET}@${CLOUDINARY_CLOUD_NAME}
 ```
 
+Ou directement dans les variables d'environnement de Railway:
+
+1. Allez dans votre projet sur Railway
+2. Cliquez sur l'onglet "Variables"
+3. Ajoutez les variables ci-dessus avec leurs valeurs
+
 ## 3. Migrer les médias existants vers Cloudinary
 
 Une fois les variables d'environnement configurées, vous pouvez migrer vos médias existants vers Cloudinary:
@@ -63,15 +69,28 @@ curl -X POST https://backend-production-b4aa.up.railway.app/api/media \
 
 Utilisez le formulaire de téléchargement de média dans votre panneau d'administration.
 
-## 5. Dépannage
+## 5. Vérification de la configuration
 
-### 5.1 Les images ne s'affichent pas
+Pour vérifier si Cloudinary est correctement configuré, exécutez le script de test:
+
+```bash
+php test-cloudinary-config.php
+```
+
+Ce script vérifie:
+- La présence des variables d'environnement
+- La connexion à Cloudinary
+- La capacité à uploader et supprimer des fichiers
+
+## 6. Dépannage
+
+### 6.1 Les images ne s'affichent pas
 
 1. Vérifiez que l'URL Cloudinary est correcte en la consultant dans la base de données
 2. Vérifiez que le fichier existe bien sur Cloudinary dans votre Dashboard
 3. Vérifiez que le frontend est configuré pour utiliser les URLs Cloudinary
 
-### 5.2 Erreurs de téléchargement
+### 6.2 Erreurs de téléchargement
 
 Si vous rencontrez des erreurs lors du téléchargement:
 
@@ -79,7 +98,14 @@ Si vous rencontrez des erreurs lors du téléchargement:
 2. Vérifiez la taille du fichier (max 20MB par défaut)
 3. Vérifiez les logs de Railway pour voir les erreurs détaillées
 
-## 6. Gestion des médias dans Cloudinary
+### 6.3 Message d'erreur "Target class [cloudinary] does not exist"
+
+Ce message indique que le package Cloudinary n'est pas correctement installé ou configuré. Vérifiez:
+1. Que le package `cloudinary-labs/cloudinary-laravel` est bien installé
+2. Que le provider `CloudinaryLabs\CloudinaryLaravel\CloudinaryServiceProvider::class` est bien enregistré dans `config/app.php`
+3. Que les variables d'environnement sont correctement définies
+
+## 7. Gestion des médias dans Cloudinary
 
 Vous pouvez gérer vos médias directement dans le Dashboard Cloudinary:
 
