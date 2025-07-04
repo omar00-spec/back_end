@@ -129,6 +129,7 @@ Route::post('/media', [MediaController::class, 'store']);
 Route::put('/media/{id}', [MediaController::class, 'update']);
 Route::delete('/media/{media}', [MediaController::class, 'destroy']);
 Route::post('/media/migrate-to-cloudinary', [MediaController::class, 'migrateToCloudinary']);
+Route::get('/media/check-storage', [MediaController::class, 'checkStorage']);
 
 // Routes pour l'administration des actualités/événements
 Route::prefix('admin')->group(function () {

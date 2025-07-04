@@ -35,22 +35,37 @@ class MediaController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
-            'file' => 'required|file|mimes:jpg,jpeg,png,mp4,mov|max:20480',
-            'title' => 'required',
-            'type' => 'required|in:photo,video',
-            'category_id' => 'nullable|exists:categories,id'
-        ]);
+        try {
+            $request->validate([
+                'file' => 'required|file|mimes:jpg,jpeg,png,mp4,mov|max:20480',
+                'title' => 'required',
+                'type' => 'required|in:photo,video',
+                'category_id' => 'nullable|exists:categories,id'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Validation échouée', [
+                'message' => $e->getMessage(),
+                'request' => $request->all()
+            ]);
+            return response()->json([
+                'message' => 'Validation échouée',
+                'error' => $e->getMessage()
+            ], 422);
+        }
         
         try {
             $file = $request->file('file');
             
-            // Ajouter cette vérification pour s'assurer que le fichier existe
-            if (!$file) {
-                \Log::error('Fichier non reçu dans la requête');
+            // Vérification approfondie du fichier
+            if (!$file || !$file->isValid()) {
+                \Log::error('Fichier invalide ou non reçu', [
+                    'file_exists' => $request->hasFile('file'),
+                    'all_files' => $request->allFiles(),
+                    'request_data' => $request->all()
+                ]);
                 return response()->json([
-                    'message' => 'Aucun fichier n\'a été reçu',
-                    'error' => 'file_missing'
+                    'message' => 'Le fichier est invalide ou n\'a pas été reçu',
+                    'error' => 'file_invalid'
                 ], 400);
             }
             
@@ -61,38 +76,76 @@ class MediaController extends Controller
                 'file_type' => $file->getMimeType()
             ]);
             
-            // Upload sur Cloudinary
+            // SOLUTION TEMPORAIRE: Utiliser le stockage local en cas d'erreur avec Cloudinary
             try {
-                $uploadedFileUrl = cloudinary()->upload($file->getRealPath(), [
-                    'folder' => 'acos_football/' . $request->type . 's',
-                    'resource_type' => 'auto'
-                ])->getSecurePath();
+                // Préparer le nom de fichier
+                $fileName = time() . '_' . $file->getClientOriginalName();
                 
-                \Log::info('Upload Cloudinary réussi', ['url' => $uploadedFileUrl]);
-            } catch (\Exception $cloudinaryError) {
-                \Log::error('Erreur Cloudinary spécifique', [
-                    'message' => $cloudinaryError->getMessage(),
-                    'trace' => $cloudinaryError->getTraceAsString()
+                // Essayer d'abord Cloudinary
+                try {
+                    \Log::info('Tentative upload Cloudinary');
+                    $uploadedFileUrl = cloudinary()->upload($file->getRealPath(), [
+                        'folder' => 'acos_football/' . $request->type . 's',
+                        'resource_type' => 'auto'
+                    ])->getSecurePath();
+                    
+                    \Log::info('Upload Cloudinary réussi', ['url' => $uploadedFileUrl]);
+                } catch (\Exception $cloudinaryError) {
+                    // Si Cloudinary échoue, utiliser le stockage local
+                    \Log::warning('Échec Cloudinary, utilisation du stockage local', [
+                        'error' => $cloudinaryError->getMessage()
+                    ]);
+                    
+                    $localPath = $file->storeAs('media', $fileName, 'public');
+                    $uploadedFileUrl = url('storage/' . $localPath);
+                    \Log::info('Stockage local réussi', ['path' => $localPath, 'url' => $uploadedFileUrl]);
+                }
+            } catch (\Exception $uploadError) {
+                \Log::error('Erreur critique lors de l\'upload', [
+                    'message' => $uploadError->getMessage(),
+                    'trace' => $uploadError->getTraceAsString()
                 ]);
-                throw $cloudinaryError; // Relancer pour être capturé par le catch externe
+                
+                // Dernier recours: essayer un stockage local simple
+                try {
+                    $localPath = $file->storeAs('media', $fileName, 'public');
+                    $uploadedFileUrl = url('storage/' . $localPath);
+                    \Log::info('Stockage local de secours réussi', ['url' => $uploadedFileUrl]);
+                } catch (\Exception $e) {
+                    \Log::error('Échec total du stockage', ['error' => $e->getMessage()]);
+                    return response()->json([
+                        'message' => 'Erreur lors du stockage du fichier',
+                        'error' => $e->getMessage()
+                    ], 500);
+                }
             }
             
             // Créer l'entrée dans la base de données
-            $media = new Media();
-            $media->title = $request->title;
-            $media->type = $request->type;
-            $media->category_id = $request->category_id;
-            $media->file_path = $uploadedFileUrl; // URL Cloudinary
-            $media->save();
-            
-            \Log::info('Média sauvegardé en BDD', ['id' => $media->id, 'url' => $media->file_path]);
-            
-            return response()->json([
-                'message' => 'Média téléchargé avec succès',
-                'media' => $media
-            ], 201);
+            try {
+                $media = new Media();
+                $media->title = $request->title;
+                $media->type = $request->type;
+                $media->category_id = $request->category_id;
+                $media->file_path = $uploadedFileUrl;
+                $media->save();
+                
+                \Log::info('Média sauvegardé en BDD', ['id' => $media->id, 'url' => $media->file_path]);
+                
+                return response()->json([
+                    'message' => 'Média téléchargé avec succès',
+                    'media' => $media
+                ], 201);
+            } catch (\Exception $dbError) {
+                \Log::error('Erreur lors de la sauvegarde en base de données', [
+                    'error' => $dbError->getMessage()
+                ]);
+                return response()->json([
+                    'message' => 'Erreur lors de la sauvegarde en base de données',
+                    'error' => $dbError->getMessage()
+                ], 500);
+            }
         } catch (\Exception $e) {
-            \Log::error('Erreur lors du téléchargement du média', [
+            \Log::error('Erreur générale lors du téléchargement du média', [
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -118,68 +171,123 @@ class MediaController extends Controller
 
     public function update(Request $request, $id)
     {
-        $media = Media::findOrFail($id);
-        
         try {
-            if ($request->hasFile('file')) {
-                $file = $request->file('file');
-                
-                // Debug - Log des informations avant l'update
-                \Log::info('Tentative de mise à jour sur Cloudinary', [
-                    'media_id' => $id,
-                    'file_name' => $file->getClientOriginalName(),
-                    'file_size' => $file->getSize(),
-                    'file_type' => $file->getMimeType()
-                ]);
-                
-                // Si un nouveau fichier est téléchargé, supprimer l'ancien sur Cloudinary
-                if ($this->isCloudinaryUrl($media->file_path)) {
-                    $this->deleteFromCloudinary($media->file_path);
-                }
-                
-                // Upload sur Cloudinary avec try/catch
-                try {
-                    $uploadedFileUrl = cloudinary()->upload($file->getRealPath(), [
-                        'folder' => 'acos_football/' . ($request->type ?? $media->type) . 's',
-                        'resource_type' => 'auto'
-                    ])->getSecurePath();
+        $media = Media::findOrFail($id);
+            
+            try {
+                if ($request->hasFile('file')) {
+                    $file = $request->file('file');
                     
-                    \Log::info('Mise à jour Cloudinary réussie', ['url' => $uploadedFileUrl]);
+                    // Vérification approfondie du fichier
+                    if (!$file->isValid()) {
+                        \Log::error('Fichier invalide lors de la mise à jour', [
+                            'media_id' => $id,
+                            'file_info' => [
+                                'name' => $file->getClientOriginalName(),
+                                'size' => $file->getSize(),
+                                'error' => $file->getError()
+                            ]
+                        ]);
+                        return response()->json([
+                            'message' => 'Le fichier téléchargé est invalide',
+                            'error' => 'file_invalid'
+                        ], 400);
+                    }
                     
-                    // Mettre à jour le chemin
-                    $media->file_path = $uploadedFileUrl;
-                } catch (\Exception $cloudinaryError) {
-                    \Log::error('Erreur Cloudinary lors de la mise à jour', [
-                        'message' => $cloudinaryError->getMessage(),
-                        'trace' => $cloudinaryError->getTraceAsString()
+                    // Debug - Log des informations avant l'update
+                    \Log::info('Tentative de mise à jour sur Cloudinary', [
+                        'media_id' => $id,
+                        'file_name' => $file->getClientOriginalName(),
+                        'file_size' => $file->getSize(),
+                        'file_type' => $file->getMimeType()
                     ]);
-                    throw $cloudinaryError;
+                    
+                    // Si un nouveau fichier est téléchargé, supprimer l'ancien sur Cloudinary
+                    if ($this->isCloudinaryUrl($media->file_path)) {
+                        $this->deleteFromCloudinary($media->file_path);
+                    }
+                    
+                    // Préparer le nom de fichier pour stockage local de secours
+                    $fileName = time() . '_' . $file->getClientOriginalName();
+                    
+                    try {
+                        // Upload sur Cloudinary avec try/catch
+                        try {
+                            $uploadedFileUrl = cloudinary()->upload($file->getRealPath(), [
+                                'folder' => 'acos_football/' . ($request->type ?? $media->type) . 's',
+                                'resource_type' => 'auto'
+                            ])->getSecurePath();
+                            
+                            \Log::info('Mise à jour Cloudinary réussie', ['url' => $uploadedFileUrl]);
+                        } catch (\Exception $cloudinaryError) {
+                            // Si Cloudinary échoue, utiliser le stockage local
+                            \Log::warning('Échec Cloudinary lors de la mise à jour, utilisation du stockage local', [
+                                'error' => $cloudinaryError->getMessage()
+                            ]);
+                            
+                            $localPath = $file->storeAs('media', $fileName, 'public');
+                            $uploadedFileUrl = url('storage/' . $localPath);
+                            \Log::info('Stockage local réussi pour la mise à jour', ['path' => $localPath, 'url' => $uploadedFileUrl]);
+                        }
+                        
+                        // Mettre à jour le chemin
+                        $media->file_path = $uploadedFileUrl;
+                    } catch (\Exception $uploadError) {
+                        \Log::error('Erreur critique lors de la mise à jour du fichier', [
+                            'message' => $uploadError->getMessage(),
+                            'trace' => $uploadError->getTraceAsString()
+                        ]);
+                        
+                        // Dernier recours: essayer un stockage local simple
+                        try {
+                            $localPath = $file->storeAs('media', $fileName, 'public');
+                            $uploadedFileUrl = url('storage/' . $localPath);
+                            \Log::info('Stockage local de secours réussi pour la mise à jour', ['url' => $uploadedFileUrl]);
+                            $media->file_path = $uploadedFileUrl;
+                        } catch (\Exception $e) {
+                            \Log::error('Échec total du stockage lors de la mise à jour', ['error' => $e->getMessage()]);
+                            return response()->json([
+                                'message' => 'Erreur lors du stockage du fichier pour la mise à jour',
+                                'error' => $e->getMessage()
+                            ], 500);
+                        }
+                    }
                 }
-            }
-            
-            // Mettre à jour les autres champs
-            $media->title = $request->title ?? $media->title;
-            $media->type = $request->type ?? $media->type;
-            $media->category_id = $request->category_id ?? $media->category_id;
-            $media->save();
-            
-            \Log::info('Média mis à jour en BDD', ['id' => $media->id, 'url' => $media->file_path]);
+                
+                // Mettre à jour les autres champs
+                $media->title = $request->title ?? $media->title;
+                $media->type = $request->type ?? $media->type;
+                $media->category_id = $request->category_id ?? $media->category_id;
+                $media->save();
+                
+                \Log::info('Média mis à jour en BDD', ['id' => $media->id, 'url' => $media->file_path]);
 
         return response()->json([
             'message' => 'Média mis à jour avec succès !',
             'media' => $media
         ]);
+            } catch (\Exception $e) {
+                \Log::error('Erreur lors de la mise à jour du média', [
+                    'media_id' => $id,
+                    'message' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                
+                return response()->json([
+                    'message' => 'Erreur lors de la mise à jour du média',
+                    'error' => $e->getMessage()
+                ], 500);
+            }
         } catch (\Exception $e) {
-            \Log::error('Erreur lors de la mise à jour du média', [
-                'media_id' => $id,
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+            \Log::error('Média non trouvé ou erreur générale', [
+                'id' => $id,
+                'message' => $e->getMessage()
             ]);
             
             return response()->json([
-                'message' => 'Erreur lors de la mise à jour du média',
+                'message' => 'Média non trouvé ou erreur générale',
                 'error' => $e->getMessage()
-            ], 500);
+            ], 404);
         }
     }
 
@@ -577,5 +685,66 @@ class MediaController extends Controller
             'successes' => $successes,
             'errors' => $errors
         ]);
+    }
+
+    /**
+     * Vérifier l'état du stockage des médias
+     */
+    public function checkStorage()
+    {
+        try {
+            $result = [
+                'storage' => [
+                    'public_path_exists' => file_exists(public_path('storage')),
+                    'public_media_exists' => file_exists(public_path('storage/media')),
+                    'storage_path_exists' => file_exists(storage_path('app/public')),
+                    'storage_media_exists' => file_exists(storage_path('app/public/media')),
+                ],
+                'permissions' => [
+                    'public_storage_writable' => is_writable(public_path('storage')),
+                    'storage_app_public_writable' => is_writable(storage_path('app/public')),
+                ],
+                'media_count' => Media::count(),
+                'cloudinary_config' => [
+                    'cloud_name' => env('CLOUDINARY_CLOUD_NAME') ? 'Défini' : 'Non défini',
+                    'api_key' => env('CLOUDINARY_KEY') ? 'Défini' : 'Non défini',
+                    'api_secret' => env('CLOUDINARY_SECRET') ? 'Défini' : 'Non défini',
+                    'url' => env('CLOUDINARY_URL') ? 'Défini' : 'Non défini',
+                ],
+                'test_creation' => [
+                    'status' => 'pending'
+                ]
+            ];
+            
+            // Essayer de créer un fichier test
+            try {
+                $testFile = 'storage/media/test_' . time() . '.txt';
+                file_put_contents(public_path($testFile), 'Test file creation');
+                $result['test_creation'] = [
+                    'status' => 'success',
+                    'path' => $testFile,
+                    'url' => url($testFile)
+                ];
+            } catch (\Exception $e) {
+                $result['test_creation'] = [
+                    'status' => 'failed',
+                    'error' => $e->getMessage()
+                ];
+            }
+            
+            // Vérifier si le lien symbolique est correctement configuré
+            $result['symlink_status'] = [
+                'should_exist' => storage_path('app/public') . ' -> ' . public_path('storage'),
+                'storage_exists' => is_dir(public_path('storage')),
+                'command_to_create' => 'php artisan storage:link'
+            ];
+            
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ], 500);
+        }
     }
 }
