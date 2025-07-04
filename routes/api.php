@@ -269,3 +269,9 @@ Route::get('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::cla
 Route::put('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'update']);
 Route::post('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'update']); // Route POST pour la mise à jour avec _method=PUT
 Route::delete('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'destroy']);
+
+// Route pour le callback Cloudinary pour les uploads asynchrones
+Route::post('/cloudinary-callback', function (Illuminate\Http\Request $request) {
+    \Log::info('Callback Cloudinary reçu', $request->all());
+    return response()->json(['status' => 'success']);
+});

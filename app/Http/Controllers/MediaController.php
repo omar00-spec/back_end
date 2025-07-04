@@ -147,13 +147,18 @@ class MediaController extends Controller
                 
                 // Options spécifiques pour les vidéos
                 $options = [
-                    'resource_type' => 'video',
+                    'resource_type' => 'video', // IMPORTANT: forcer le type à vidéo
                     'folder' => $folder,
                     'use_filename' => true,
                     'unique_filename' => true,
                     'overwrite' => false,
                     'chunk_size' => 6000000, // 6MB chunks pour les vidéos volumineuses
-                    'timeout' => 120, // 2 minutes timeout
+                    'timeout' => 300, // 5 minutes timeout
+                    'eager' => [
+                        ['streaming_profile' => 'hd', 'format' => 'mp4']
+                    ],
+                    'eager_async' => true,
+                    'eager_notification_url' => env('APP_URL') . '/api/cloudinary-callback'
                 ];
                 
                 \Log::info('Options d\'upload vidéo configurées', $options);
@@ -173,8 +178,26 @@ class MediaController extends Controller
                 \Log::info('Début upload Cloudinary avec options', [
                     'resource_type' => $options['resource_type'],
                     'folder' => $folder,
-                    'file_name' => $file->getClientOriginalName()
+                    'file_name' => $file->getClientOriginalName(),
+                    'file_size' => $file->getSize(),
+                    'file_mime' => $file->getMimeType()
                 ]);
+                
+                // Pour les vidéos, utiliser une approche spécifique
+                if ($request->type === 'video') {
+                    \Log::info('Utilisation de l\'upload spécial pour vidéo');
+                    
+                    // S'assurer que le resource_type est bien défini
+                    $options['resource_type'] = 'video';
+                    
+                    // Vérifier la taille de la vidéo et ajuster les options si nécessaire
+                    $fileSizeMB = round($file->getSize() / (1024 * 1024), 2);
+                    if ($fileSizeMB > 50) {
+                        \Log::info("Vidéo volumineuse détectée: {$fileSizeMB}MB - Ajustement des options d'upload");
+                        $options['chunk_size'] = 10000000; // 10MB chunks pour les très grosses vidéos
+                        $options['timeout'] = 600; // 10 minutes timeout
+                    }
+                }
                 
                 // Upload sur Cloudinary
                 $uploadResult = Cloudinary::upload($file->getRealPath(), $options);
@@ -182,7 +205,8 @@ class MediaController extends Controller
                 \Log::info('Résultat upload Cloudinary', [
                     'secure_url' => $uploadResult->getSecurePath(),
                     'public_id' => $uploadResult->getPublicId(),
-                    'resource_type' => $uploadResult->getResourceType()
+                    'resource_type' => $uploadResult->getResourceType(),
+                    'format' => $uploadResult->getExtension()
                 ]);
                 
                 // Créer l'entrée dans la base de données
@@ -246,14 +270,57 @@ class MediaController extends Controller
                     'trace' => $cloudinaryError->getTraceAsString(),
                     'code' => $cloudinaryError->getCode(),
                     'file' => $cloudinaryError->getFile(),
-                    'line' => $cloudinaryError->getLine()
+                    'line' => $cloudinaryError->getLine(),
+                    'request_type' => $request->type,
+                    'file_info' => [
+                        'name' => $file->getClientOriginalName(),
+                        'size' => $file->getSize(),
+                        'mime' => $file->getMimeType(),
+                        'extension' => $file->getClientOriginalExtension(),
+                    ]
                 ]);
                 
-                // Pas de fallback, retourner l'erreur directement
-                return response()->json([
-                    'message' => 'Erreur lors de l\'upload sur Cloudinary',
-                    'error' => $cloudinaryError->getMessage()
-                ], 500);
+                // Pour les vidéos, essayer une approche alternative
+                if ($request->type === 'video') {
+                    try {
+                        \Log::info('Tentative alternative pour l\'upload de vidéo');
+                        
+                        // Simplifier les options pour l'upload alternatif
+                        $simpleOptions = [
+                            'resource_type' => 'video',
+                            'folder' => $folder,
+                            'use_filename' => true,
+                            'unique_filename' => true,
+                        ];
+                        
+                        // Tentative d'upload avec des options simplifiées
+                        $uploadResult = Cloudinary::upload($file->getRealPath(), $simpleOptions);
+                        
+                        \Log::info('Upload alternatif réussi', [
+                            'secure_url' => $uploadResult->getSecurePath(),
+                            'public_id' => $uploadResult->getPublicId()
+                        ]);
+                        
+                        // Continuer avec le résultat alternatif
+                    } catch (\Exception $altError) {
+                        \Log::error('Échec de l\'upload alternatif', [
+                            'message' => $altError->getMessage()
+                        ]);
+                        
+                        // Retourner l'erreur originale
+                        return response()->json([
+                            'message' => 'Erreur lors de l\'upload sur Cloudinary',
+                            'error' => $cloudinaryError->getMessage(),
+                            'details' => 'Tentative alternative également échouée'
+                        ], 500);
+                    }
+                } else {
+                    // Pas de fallback pour les autres types, retourner l'erreur directement
+                    return response()->json([
+                        'message' => 'Erreur lors de l\'upload sur Cloudinary',
+                        'error' => $cloudinaryError->getMessage()
+                    ], 500);
+                }
             }
         } catch (\Exception $e) {
             \Log::error('Erreur générale lors du téléchargement du média', [
