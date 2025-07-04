@@ -36,6 +36,18 @@ class MediaController extends Controller
 
     public function store(Request $request)
     {
+        // Log complet de la requête pour le débogage
+        \Log::info('Requête de création de média reçue', [
+            'all_data' => $request->all(),
+            'has_file' => $request->hasFile('file'),
+            'file_info' => $request->hasFile('file') ? [
+                'name' => $request->file('file')->getClientOriginalName(),
+                'size' => $request->file('file')->getSize(),
+                'mime' => $request->file('file')->getMimeType(),
+                'extension' => $request->file('file')->getClientOriginalExtension(),
+            ] : null
+        ]);
+        
         // Validation des données avec des règles plus permissives pour les vidéos
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
@@ -87,6 +99,15 @@ class MediaController extends Controller
                     'url' => env('CLOUDINARY_URL') ? 'Défini' : 'Non défini',
                 ]
             ]);
+            
+            // Vérification spéciale pour les vidéos
+            if ($request->type === 'video') {
+                \Log::info('Traitement d\'une vidéo', [
+                    'mime_type' => $file->getMimeType(),
+                    'extension' => $file->getClientOriginalExtension(),
+                    'size_mb' => round($file->getSize() / (1024 * 1024), 2)
+                ]);
+            }
             
             // Upload sur Cloudinary - sans fallback
             $folder = 'acos_football/' . $request->type . 's';
@@ -152,8 +173,10 @@ class MediaController extends Controller
                     $resourceType = 'auto';
                     if ($request->type === 'video') {
                         $resourceType = 'video';
+                        \Log::info("Type de média: vidéo, utilisation du resource_type=video pour Cloudinary");
                     } elseif ($request->type === 'photo') {
                         $resourceType = 'image';
+                        \Log::info("Type de média: photo, utilisation du resource_type=image pour Cloudinary");
                     }
                     
                     // Utiliser le SDK directement
@@ -166,13 +189,35 @@ class MediaController extends Controller
                             'folder' => $folder
                         ]);
                         
-                        $uploadResult = $uploadApi->upload($filePath, [
-                            'folder' => $folder,
-                            'resource_type' => $resourceType
-                        ]);
-                        
-                        $uploadedFileUrl = $uploadResult['secure_url'];
-                        \Log::info("Upload réussi avec SDK Cloudinary", ['url' => $uploadedFileUrl]);
+                        try {
+                            $uploadOptions = [
+                                'folder' => $folder,
+                                'resource_type' => $resourceType
+                            ];
+                            
+                            // Options spéciales pour les vidéos
+                            if ($request->type === 'video') {
+                                $uploadOptions['chunk_size'] = 6000000; // 6MB chunks pour les vidéos volumineuses
+                                $uploadOptions['eager'] = [
+                                    ['streaming_profile' => 'full_hd', 'format' => 'mp4']
+                                ];
+                                $uploadOptions['eager_async'] = true;
+                            }
+                            
+                            $uploadResult = $uploadApi->upload($filePath, $uploadOptions);
+                            
+                            $uploadedFileUrl = $uploadResult['secure_url'];
+                            \Log::info("Upload réussi avec SDK Cloudinary", [
+                                'url' => $uploadedFileUrl,
+                                'resource_type' => $resourceType
+                            ]);
+                        } catch (\Exception $e) {
+                            \Log::error("Erreur lors de l'upload avec le SDK Cloudinary", [
+                                'message' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString()
+                            ]);
+                            throw $e;
+                        }
                     } 
                     // Fallback vers la façade Laravel si disponible
                     else if (class_exists('CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary')) {
@@ -182,13 +227,35 @@ class MediaController extends Controller
                             'folder' => $folder
                         ]);
                         
-                        $uploadResult = \CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::upload($filePath, [
-                            'folder' => $folder,
-                            'resource_type' => $resourceType
-                        ]);
-                        
-                        $uploadedFileUrl = $uploadResult->getSecurePath();
-                        \Log::info("Upload réussi avec façade Cloudinary Laravel", ['url' => $uploadedFileUrl]);
+                        try {
+                            $uploadOptions = [
+                                'folder' => $folder,
+                                'resource_type' => $resourceType
+                            ];
+                            
+                            // Options spéciales pour les vidéos
+                            if ($request->type === 'video') {
+                                $uploadOptions['chunk_size'] = 6000000; // 6MB chunks pour les vidéos volumineuses
+                                $uploadOptions['eager'] = [
+                                    ['streaming_profile' => 'full_hd', 'format' => 'mp4']
+                                ];
+                                $uploadOptions['eager_async'] = true;
+                            }
+                            
+                            $uploadResult = \CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::upload($filePath, $uploadOptions);
+                            
+                            $uploadedFileUrl = $uploadResult->getSecurePath();
+                            \Log::info("Upload réussi avec façade Cloudinary Laravel", [
+                                'url' => $uploadedFileUrl,
+                                'resource_type' => $resourceType
+                            ]);
+                        } catch (\Exception $e) {
+                            \Log::error("Erreur lors de l'upload avec la façade Cloudinary Laravel", [
+                                'message' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString()
+                            ]);
+                            throw $e;
+                        }
                     } else {
                         throw new \Exception("Aucun SDK Cloudinary disponible");
                     }
@@ -424,13 +491,35 @@ class MediaController extends Controller
                                     'folder' => $folder
                                 ]);
                                 
-                                $uploadResult = $uploadApi->upload($filePath, [
-                                    'folder' => $folder,
-                                    'resource_type' => $resourceType
-                                ]);
-                                
-                                $uploadedFileUrl = $uploadResult['secure_url'];
-                                \Log::info("Upload réussi avec SDK Cloudinary", ['url' => $uploadedFileUrl]);
+                                try {
+                                    $uploadOptions = [
+                                        'folder' => $folder,
+                                        'resource_type' => $resourceType
+                                    ];
+                                    
+                                    // Options spéciales pour les vidéos
+                                    if ($mediaType === 'video') {
+                                        $uploadOptions['chunk_size'] = 6000000; // 6MB chunks pour les vidéos volumineuses
+                                        $uploadOptions['eager'] = [
+                                            ['streaming_profile' => 'full_hd', 'format' => 'mp4']
+                                        ];
+                                        $uploadOptions['eager_async'] = true;
+                                    }
+                                    
+                                    $uploadResult = $uploadApi->upload($filePath, $uploadOptions);
+                                    
+                                    $uploadedFileUrl = $uploadResult['secure_url'];
+                                    \Log::info("Upload réussi avec SDK Cloudinary", [
+                                        'url' => $uploadedFileUrl,
+                                        'resource_type' => $resourceType
+                                    ]);
+                                } catch (\Exception $e) {
+                                    \Log::error("Erreur lors de l'upload avec le SDK Cloudinary", [
+                                        'message' => $e->getMessage(),
+                                        'trace' => $e->getTraceAsString()
+                                    ]);
+                                    throw $e;
+                                }
                             } 
                             // Fallback vers la façade Laravel si disponible
                             else if (class_exists('CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary')) {
@@ -440,13 +529,35 @@ class MediaController extends Controller
                                     'folder' => $folder
                                 ]);
                                 
-                                $uploadResult = \CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::upload($filePath, [
-                                    'folder' => $folder,
-                                    'resource_type' => $resourceType
-                                ]);
-                                
-                                $uploadedFileUrl = $uploadResult->getSecurePath();
-                                \Log::info("Upload réussi avec façade Cloudinary Laravel", ['url' => $uploadedFileUrl]);
+                                try {
+                                    $uploadOptions = [
+                                        'folder' => $folder,
+                                        'resource_type' => $resourceType
+                                    ];
+                                    
+                                    // Options spéciales pour les vidéos
+                                    if ($mediaType === 'video') {
+                                        $uploadOptions['chunk_size'] = 6000000; // 6MB chunks pour les vidéos volumineuses
+                                        $uploadOptions['eager'] = [
+                                            ['streaming_profile' => 'full_hd', 'format' => 'mp4']
+                                        ];
+                                        $uploadOptions['eager_async'] = true;
+                                    }
+                                    
+                                    $uploadResult = \CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::upload($filePath, $uploadOptions);
+                                    
+                                    $uploadedFileUrl = $uploadResult->getSecurePath();
+                                    \Log::info("Upload réussi avec façade Cloudinary Laravel", [
+                                        'url' => $uploadedFileUrl,
+                                        'resource_type' => $resourceType
+                                    ]);
+                                } catch (\Exception $e) {
+                                    \Log::error("Erreur lors de l'upload avec la façade Cloudinary Laravel", [
+                                        'message' => $e->getMessage(),
+                                        'trace' => $e->getTraceAsString()
+                                    ]);
+                                    throw $e;
+                                }
                             } else {
                                 throw new \Exception("Aucun SDK Cloudinary disponible");
                             }
