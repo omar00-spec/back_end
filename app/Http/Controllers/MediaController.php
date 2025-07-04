@@ -36,15 +36,20 @@ class MediaController extends Controller
 
     public function store(Request $request)
     {
-        // Validation des données
+        // Validation des données avec des règles plus permissives pour les vidéos
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'type' => 'required|string|in:photo,video,document',
             'category_id' => 'nullable|exists:categories,id',
-            'file' => 'required|file|max:20480', // 20MB max
+            'file' => 'required|file|max:102400', // 100MB max pour permettre les vidéos
         ]);
 
         if ($validator->fails()) {
+            \Log::error('Validation échouée pour le média', [
+                'errors' => $validator->errors()->toArray(),
+                'request_data' => $request->all()
+            ]);
+            
             return response()->json([
                 'message' => 'Validation échouée',
                 'errors' => $validator->errors()
@@ -74,6 +79,7 @@ class MediaController extends Controller
                 'file_size' => $file->getSize(),
                 'file_type' => $file->getMimeType(),
                 'extension' => $file->getClientOriginalExtension(),
+                'requested_type' => $request->type,
                 'cloudinary_config' => [
                     'cloud_name' => env('CLOUDINARY_CLOUD_NAME') ? 'Défini' : 'Non défini',
                     'api_key' => env('CLOUDINARY_KEY') ? 'Défini' : 'Non défini',
@@ -112,51 +118,80 @@ class MediaController extends Controller
                         'api_secret' => $apiSecret ? 'Défini' : 'Non défini'
                     ]);
                     
-                    return response()->json([
-                        'message' => 'Configuration Cloudinary incomplète',
-                        'error' => 'cloudinary_config_missing'
-                    ], 500);
-                }
-                
-                \Log::info("Configuration Cloudinary explicite", [
-                    'cloud_name' => $cloudName,
-                    'api_key' => substr($apiKey, 0, 3) . '...' // Ne log pas la clé complète
-                ]);
-                
-                // Utiliser l'instance Cloudinary directement
-                $config = [
-                    'cloud' => [
-                        'cloud_name' => $cloudName,
-                        'api_key' => $apiKey,
-                        'api_secret' => $apiSecret
-                    ]
-                ];
-                
-                // Initialiser une variable pour l'URL du fichier uploadé
-                $uploadedFileUrl = null;
-                
-                // Utiliser le SDK directement
-                if (class_exists('Cloudinary\Cloudinary')) {
-                    $cloudinary = new \Cloudinary\Cloudinary($config);
-                    $uploadApi = $cloudinary->uploadApi();
-                    $uploadResult = $uploadApi->upload($filePath, [
-                        'folder' => $folder,
-                        'resource_type' => 'auto'
-                    ]);
+                    // Fallback vers le stockage local si Cloudinary n'est pas configuré
+                    \Log::info("Tentative de fallback vers stockage local");
                     
-                    $uploadedFileUrl = $uploadResult['secure_url'];
-                } 
-                // Fallback vers la façade Laravel si disponible
-                else if (class_exists('CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary')) {
-                    // Upload avec l'instance configurée explicitement
-                    $uploadResult = \CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::upload($filePath, [
-                        'folder' => $folder,
-                        'resource_type' => 'auto'
-                    ]);
+                    // Générer un nom de fichier unique
+                    $filename = 'media_' . time() . '_' . $file->getClientOriginalName();
+                    $path = $file->storeAs('public/media', $filename);
+                    $uploadedFileUrl = asset('storage/media/' . $filename);
                     
-                    $uploadedFileUrl = $uploadResult->getSecurePath();
+                    \Log::info("Fichier sauvegardé localement", [
+                        'path' => $path,
+                        'url' => $uploadedFileUrl
+                    ]);
                 } else {
-                    throw new \Exception("Aucun SDK Cloudinary disponible");
+                    \Log::info("Configuration Cloudinary explicite", [
+                        'cloud_name' => $cloudName,
+                        'api_key' => substr($apiKey, 0, 3) . '...' // Ne log pas la clé complète
+                    ]);
+                    
+                    // Utiliser l'instance Cloudinary directement
+                    $config = [
+                        'cloud' => [
+                            'cloud_name' => $cloudName,
+                            'api_key' => $apiKey,
+                            'api_secret' => $apiSecret
+                        ]
+                    ];
+                    
+                    // Initialiser une variable pour l'URL du fichier uploadé
+                    $uploadedFileUrl = null;
+                    
+                    // Déterminer le type de ressource pour Cloudinary
+                    $resourceType = 'auto';
+                    if ($request->type === 'video') {
+                        $resourceType = 'video';
+                    } elseif ($request->type === 'photo') {
+                        $resourceType = 'image';
+                    }
+                    
+                    // Utiliser le SDK directement
+                    if (class_exists('Cloudinary\Cloudinary')) {
+                        $cloudinary = new \Cloudinary\Cloudinary($config);
+                        $uploadApi = $cloudinary->uploadApi();
+                        
+                        \Log::info("Tentative d'upload avec le SDK Cloudinary", [
+                            'resource_type' => $resourceType,
+                            'folder' => $folder
+                        ]);
+                        
+                        $uploadResult = $uploadApi->upload($filePath, [
+                            'folder' => $folder,
+                            'resource_type' => $resourceType
+                        ]);
+                        
+                        $uploadedFileUrl = $uploadResult['secure_url'];
+                        \Log::info("Upload réussi avec SDK Cloudinary", ['url' => $uploadedFileUrl]);
+                    } 
+                    // Fallback vers la façade Laravel si disponible
+                    else if (class_exists('CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary')) {
+                        // Upload avec l'instance configurée explicitement
+                        \Log::info("Tentative d'upload avec la façade Cloudinary Laravel", [
+                            'resource_type' => $resourceType,
+                            'folder' => $folder
+                        ]);
+                        
+                        $uploadResult = \CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::upload($filePath, [
+                            'folder' => $folder,
+                            'resource_type' => $resourceType
+                        ]);
+                        
+                        $uploadedFileUrl = $uploadResult->getSecurePath();
+                        \Log::info("Upload réussi avec façade Cloudinary Laravel", ['url' => $uploadedFileUrl]);
+                    } else {
+                        throw new \Exception("Aucun SDK Cloudinary disponible");
+                    }
                 }
                 
                 // Vérifier que l'URL a bien été obtenue
@@ -302,6 +337,7 @@ class MediaController extends Controller
                         'file_name' => $file->getClientOriginalName(),
                         'file_size' => $file->getSize(),
                         'file_type' => $file->getMimeType(),
+                        'media_type' => $media->type,
                         'cloudinary_config' => [
                             'cloud_name' => env('CLOUDINARY_CLOUD_NAME') ? 'Défini' : 'Non défini',
                             'api_key' => env('CLOUDINARY_KEY') ? 'Défini' : 'Non défini',
@@ -367,31 +403,53 @@ class MediaController extends Controller
                                 ]
                             ];
                             
+                            // Déterminer le type de ressource pour Cloudinary
+                            $resourceType = 'auto';
+                            $mediaType = $request->type ?? $media->type;
+                            if ($mediaType === 'video') {
+                                $resourceType = 'video';
+                            } elseif ($mediaType === 'photo') {
+                                $resourceType = 'image';
+                            }
+                            
+                            \Log::info("Type de ressource pour l'upload: {$resourceType}");
+                            
                             // Utiliser le SDK directement
                             if (class_exists('Cloudinary\Cloudinary')) {
                                 $cloudinary = new \Cloudinary\Cloudinary($config);
                                 $uploadApi = $cloudinary->uploadApi();
+                                
+                                \Log::info("Tentative d'upload avec le SDK Cloudinary", [
+                                    'resource_type' => $resourceType,
+                                    'folder' => $folder
+                                ]);
+                                
                                 $uploadResult = $uploadApi->upload($filePath, [
                                     'folder' => $folder,
-                                    'resource_type' => 'auto'
+                                    'resource_type' => $resourceType
                                 ]);
                                 
                                 $uploadedFileUrl = $uploadResult['secure_url'];
+                                \Log::info("Upload réussi avec SDK Cloudinary", ['url' => $uploadedFileUrl]);
                             } 
                             // Fallback vers la façade Laravel si disponible
                             else if (class_exists('CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary')) {
                                 // Upload avec l'instance configurée explicitement
+                                \Log::info("Tentative d'upload avec la façade Cloudinary Laravel", [
+                                    'resource_type' => $resourceType,
+                                    'folder' => $folder
+                                ]);
+                                
                                 $uploadResult = \CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::upload($filePath, [
                                     'folder' => $folder,
-                                    'resource_type' => 'auto'
+                                    'resource_type' => $resourceType
                                 ]);
                                 
                                 $uploadedFileUrl = $uploadResult->getSecurePath();
+                                \Log::info("Upload réussi avec façade Cloudinary Laravel", ['url' => $uploadedFileUrl]);
                             } else {
                                 throw new \Exception("Aucun SDK Cloudinary disponible");
                             }
-                            
-                            \Log::info('Upload Cloudinary réussi pour la mise à jour', ['url' => $uploadedFileUrl]);
                         }
                         
                         // Vérifier que l'URL a bien été obtenue
