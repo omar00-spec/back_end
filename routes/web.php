@@ -114,3 +114,11 @@ Route::get('/storage/{path}', function($path) {
 Route::get('/cloudinary-diagnostic', function() {
     return view('cloudinary-diagnostic');
 });
+
+// Route pour le guide d'upload de vidéos
+Route::get('/guide-videos', function () {
+    $markdownContent = file_get_contents(base_path('GUIDE_UPLOAD_VIDEOS.md'));
+    
+    return response($markdownContent, 200)
+        ->header('Content-Type', 'text/markdown');
+});

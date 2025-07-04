@@ -153,12 +153,17 @@ class MediaController extends Controller
                     'unique_filename' => true,
                     'overwrite' => false,
                     'chunk_size' => 6000000, // 6MB chunks pour les vidéos volumineuses
-                    'timeout' => 300, // 5 minutes timeout
+                    'timeout' => 600, // 10 minutes timeout (augmenté)
                     'eager' => [
-                        ['streaming_profile' => 'hd', 'format' => 'mp4']
+                        ['streaming_profile' => 'hd', 'format' => 'mp4'],
+                        ['quality' => 'auto', 'format' => 'mp4'] // Ajout d'une option pour qualité auto
                     ],
                     'eager_async' => true,
-                    'eager_notification_url' => env('APP_URL') . '/api/cloudinary-callback'
+                    'eager_notification_url' => env('APP_URL') . '/api/cloudinary-callback',
+                    'transformation' => [
+                        'quality' => 'auto',
+                        'fetch_format' => 'auto'
+                    ]
                 ];
                 
                 \Log::info('Options d\'upload vidéo configurées', $options);
@@ -195,7 +200,10 @@ class MediaController extends Controller
                     if ($fileSizeMB > 50) {
                         \Log::info("Vidéo volumineuse détectée: {$fileSizeMB}MB - Ajustement des options d'upload");
                         $options['chunk_size'] = 10000000; // 10MB chunks pour les très grosses vidéos
-                        $options['timeout'] = 600; // 10 minutes timeout
+                        $options['timeout'] = 900; // 15 minutes timeout
+                        
+                        // Ajout d'informations pour le suivi de l'upload
+                        $options['notification_url'] = env('APP_URL') . '/api/cloudinary-notification';
                     }
                 }
                 
@@ -270,57 +278,14 @@ class MediaController extends Controller
                     'trace' => $cloudinaryError->getTraceAsString(),
                     'code' => $cloudinaryError->getCode(),
                     'file' => $cloudinaryError->getFile(),
-                    'line' => $cloudinaryError->getLine(),
-                    'request_type' => $request->type,
-                    'file_info' => [
-                        'name' => $file->getClientOriginalName(),
-                        'size' => $file->getSize(),
-                        'mime' => $file->getMimeType(),
-                        'extension' => $file->getClientOriginalExtension(),
-                    ]
+                    'line' => $cloudinaryError->getLine()
                 ]);
                 
-                // Pour les vidéos, essayer une approche alternative
-                if ($request->type === 'video') {
-                    try {
-                        \Log::info('Tentative alternative pour l\'upload de vidéo');
-                        
-                        // Simplifier les options pour l'upload alternatif
-                        $simpleOptions = [
-                            'resource_type' => 'video',
-                            'folder' => $folder,
-                            'use_filename' => true,
-                            'unique_filename' => true,
-                        ];
-                        
-                        // Tentative d'upload avec des options simplifiées
-                        $uploadResult = Cloudinary::upload($file->getRealPath(), $simpleOptions);
-                        
-                        \Log::info('Upload alternatif réussi', [
-                            'secure_url' => $uploadResult->getSecurePath(),
-                            'public_id' => $uploadResult->getPublicId()
-                        ]);
-                        
-                        // Continuer avec le résultat alternatif
-                    } catch (\Exception $altError) {
-                        \Log::error('Échec de l\'upload alternatif', [
-                            'message' => $altError->getMessage()
-                        ]);
-                        
-                        // Retourner l'erreur originale
-                        return response()->json([
-                            'message' => 'Erreur lors de l\'upload sur Cloudinary',
-                            'error' => $cloudinaryError->getMessage(),
-                            'details' => 'Tentative alternative également échouée'
-                        ], 500);
-                    }
-                } else {
-                    // Pas de fallback pour les autres types, retourner l'erreur directement
-                    return response()->json([
-                        'message' => 'Erreur lors de l\'upload sur Cloudinary',
-                        'error' => $cloudinaryError->getMessage()
-                    ], 500);
-                }
+                // Pas de fallback, retourner l'erreur directement
+                return response()->json([
+                    'message' => 'Erreur lors de l\'upload sur Cloudinary',
+                    'error' => $cloudinaryError->getMessage()
+                ], 500);
             }
         } catch (\Exception $e) {
             \Log::error('Erreur générale lors du téléchargement du média', [
@@ -417,10 +382,31 @@ class MediaController extends Controller
                             'unique_filename' => true,
                             'overwrite' => false,
                             'chunk_size' => 6000000, // 6MB chunks pour les vidéos volumineuses
-                            'timeout' => 120, // 2 minutes timeout
+                            'timeout' => 600, // 10 minutes timeout (augmenté)
+                            'eager' => [
+                                ['streaming_profile' => 'hd', 'format' => 'mp4'],
+                                ['quality' => 'auto', 'format' => 'mp4'] // Ajout d'une option pour qualité auto
+                            ],
+                            'eager_async' => true,
+                            'eager_notification_url' => env('APP_URL') . '/api/cloudinary-callback',
+                            'transformation' => [
+                                'quality' => 'auto',
+                                'fetch_format' => 'auto'
+                            ]
                         ];
                         
-                        \Log::info('Options d\'upload vidéo configurées', $options);
+                        \Log::info('Options d\'upload vidéo configurées pour mise à jour', $options);
+                        
+                        // Vérifier la taille de la vidéo et ajuster les options si nécessaire
+                        $fileSizeMB = round($file->getSize() / (1024 * 1024), 2);
+                        if ($fileSizeMB > 50) {
+                            \Log::info("Vidéo volumineuse détectée lors de la mise à jour: {$fileSizeMB}MB - Ajustement des options d'upload");
+                            $options['chunk_size'] = 10000000; // 10MB chunks pour les très grosses vidéos
+                            $options['timeout'] = 900; // 15 minutes timeout
+                            
+                            // Ajout d'informations pour le suivi de l'upload
+                            $options['notification_url'] = env('APP_URL') . '/api/cloudinary-notification';
+                        }
                     } else {
                         // Options pour les photos et autres fichiers
                         $options = [
@@ -1055,5 +1041,70 @@ class MediaController extends Controller
                 'trace' => $e->getTraceAsString()
             ], 500);
         }
+    }
+
+    /**
+     * Gère les callbacks de Cloudinary après le traitement des vidéos
+     */
+    public function handleCloudinaryCallback(Request $request)
+    {
+        \Log::info('Callback Cloudinary reçu', [
+            'data' => $request->all()
+        ]);
+
+        // Récupérer les informations de la notification
+        $notificationData = $request->all();
+        
+        // Vérifier si c'est une notification de fin de traitement vidéo
+        if (isset($notificationData['notification_type']) && $notificationData['notification_type'] === 'eager') {
+            \Log::info('Notification de fin de traitement vidéo reçue', [
+                'public_id' => $notificationData['public_id'] ?? 'Non défini',
+                'eager' => $notificationData['eager'] ?? []
+            ]);
+            
+            // On pourrait mettre à jour le statut de la vidéo dans la base de données ici
+            // si on avait un champ status dans la table media
+        }
+
+        return response()->json(['success' => true]);
+    }
+
+    /**
+     * Gère les notifications générales de Cloudinary
+     */
+    public function handleCloudinaryNotification(Request $request)
+    {
+        \Log::info('Notification Cloudinary reçue', [
+            'data' => $request->all()
+        ]);
+
+        // Récupérer les informations de la notification
+        $notificationData = $request->all();
+        
+        // Traiter différents types de notifications
+        if (isset($notificationData['notification_type'])) {
+            switch ($notificationData['notification_type']) {
+                case 'upload':
+                    \Log::info('Upload terminé', [
+                        'public_id' => $notificationData['public_id'] ?? 'Non défini',
+                        'url' => $notificationData['secure_url'] ?? 'Non défini'
+                    ]);
+                    break;
+                    
+                case 'eager':
+                    \Log::info('Traitement eager terminé', [
+                        'public_id' => $notificationData['public_id'] ?? 'Non défini',
+                        'eager' => $notificationData['eager'] ?? []
+                    ]);
+                    break;
+                    
+                default:
+                    \Log::info('Notification de type inconnu', [
+                        'type' => $notificationData['notification_type']
+                    ]);
+            }
+        }
+
+        return response()->json(['success' => true]);
     }
 }

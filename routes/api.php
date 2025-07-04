@@ -127,9 +127,12 @@ Route::get('/media/category/{categoryId}', [MediaController::class, 'getByCatego
 Route::get('/media/{media}', [MediaController::class, 'show']);
 Route::post('/media', [MediaController::class, 'store']);
 Route::put('/media/{id}', [MediaController::class, 'update']);
-Route::delete('/media/{media}', [MediaController::class, 'destroy']);
-Route::get('/media/migrate-to-cloudinary', [MediaController::class, 'migrateToCloudinary']);
-Route::get('/media/check-storage', [MediaController::class, 'checkStorage']);
+Route::delete('/media/{id}', [MediaController::class, 'destroy']);
+Route::post('/media/migrate-to-cloudinary', [MediaController::class, 'migrateToCloudinary']);
+
+// Endpoints pour les notifications Cloudinary
+Route::post('/cloudinary-callback', [MediaController::class, 'handleCloudinaryCallback']);
+Route::post('/cloudinary-notification', [MediaController::class, 'handleCloudinaryNotification']);
 
 // Routes pour l'administration des actualités/événements
 Route::prefix('admin')->group(function () {
@@ -269,9 +272,3 @@ Route::get('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::cla
 Route::put('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'update']);
 Route::post('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'update']); // Route POST pour la mise à jour avec _method=PUT
 Route::delete('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'destroy']);
-
-// Route pour le callback Cloudinary pour les uploads asynchrones
-Route::post('/cloudinary-callback', function (Illuminate\Http\Request $request) {
-    \Log::info('Callback Cloudinary reçu', $request->all());
-    return response()->json(['status' => 'success']);
-});
