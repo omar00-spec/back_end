@@ -27,6 +27,32 @@ Route::get('/ping', function () {
     return response()->json(['status' => 'ok', 'message' => 'Server is running']);
 });
 
+// Route de diagnostic pour les médias
+Route::get('/diagnostic/media', function () {
+    try {
+        $mediaCount = \App\Models\Media::count();
+        $latestMedia = \App\Models\Media::latest()->take(5)->get();
+        
+        return response()->json([
+            'status' => 'ok',
+            'media_count' => $mediaCount,
+            'latest_media' => $latestMedia,
+            'database_connection' => 'ok'
+        ]);
+    } catch (\Exception $e) {
+        \Log::error('Erreur dans le diagnostic des médias', [
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+            'database_connection' => 'failed'
+        ], 500);
+    }
+});
+
 // Routes API RESTful pour chaque ressource
 Route::apiResource('categories', CategoryController::class);
 Route::apiResource('coaches', CoachController::class);
@@ -122,6 +148,7 @@ Route::get('/news-only', [NewsController::class, 'getNews']);
 // Routes spécifiques pour les médias
 Route::get('/photos', [MediaController::class, 'getPhotos']);
 Route::get('/videos', [MediaController::class, 'getVideos']);
+Route::get('/media', [MediaController::class, 'index']); // Route principale pour récupérer tous les médias
 Route::get('/media/migrate-to-cloudinary', [MediaController::class, 'migrateToCloudinary']);
 Route::get('/media/check-storage', [MediaController::class, 'checkStorage']);
 Route::get('/media/category/{categoryId}', [MediaController::class, 'getByCategory']);

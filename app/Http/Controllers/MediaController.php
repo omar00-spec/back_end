@@ -11,22 +11,40 @@ class MediaController extends Controller
 {
     public function index(Request $request)
     {
+        \Log::info('MediaController::index appelé', [
+            'request_params' => $request->all(),
+            'request_path' => $request->path(),
+            'request_url' => $request->url(),
+        ]);
+        
         $query = Media::query()->with('category');
 
         // Filtrer par type si spécifié
         if ($request->has('type')) {
             $query->where('type', $request->type);
+            \Log::info('Filtrage par type', ['type' => $request->type]);
         }
 
         // Filtrer par catégorie si spécifié
         if ($request->has('category_id')) {
             $query->where('category_id', $request->category_id);
+            \Log::info('Filtrage par catégorie', ['category_id' => $request->category_id]);
         }
 
         // Trier par date de création
         $query->orderBy('created_at', 'desc');
 
         $media = $query->get();
+        
+        \Log::info('Médias récupérés', [
+            'count' => $media->count(),
+            'first_media' => $media->first() ? [
+                'id' => $media->first()->id,
+                'title' => $media->first()->title,
+                'type' => $media->first()->type,
+                'file_path' => $media->first()->file_path,
+            ] : null
+        ]);
         
         // Pas besoin de formater les URLs car Cloudinary fournit des URLs complètes
         // Les anciennes entrées continueront d'utiliser formatMediaUrl

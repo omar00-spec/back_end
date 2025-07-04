@@ -16,9 +16,44 @@ class MediaController extends BaseMediaController
     public function index(Request $request)
     {
         Log::info('Admin\MediaController::index appelé', [
-            'request_params' => $request->all()
+            'request_params' => $request->all(),
+            'request_path' => $request->path(),
+            'request_url' => $request->url(),
         ]);
-        return parent::index($request);
+        
+        try {
+            $result = parent::index($request);
+            
+            // Log du résultat
+            if ($result instanceof \Illuminate\Database\Eloquent\Collection) {
+                Log::info('Résultat de Admin\MediaController::index', [
+                    'count' => $result->count(),
+                    'first_media' => $result->first() ? [
+                        'id' => $result->first()->id,
+                        'title' => $result->first()->title,
+                        'type' => $result->first()->type,
+                        'file_path' => $result->first()->file_path,
+                    ] : null
+                ]);
+            } else {
+                Log::warning('Résultat inattendu de Admin\MediaController::index', [
+                    'type' => gettype($result),
+                    'result' => $result
+                ]);
+            }
+            
+            return $result;
+        } catch (\Exception $e) {
+            Log::error('Erreur dans Admin\MediaController::index', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'message' => 'Erreur lors de la récupération des médias',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
