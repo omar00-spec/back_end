@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Media;
 use Illuminate\Http\Request;
 use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
-use Illuminate\Support\Facades\DB;
 
 class MediaController extends Controller
 {
@@ -37,36 +36,25 @@ class MediaController extends Controller
     public function store(Request $request)
     {
         try {
-            // Log des données brutes reçues
-            \Log::info('Demande d\'upload média reçue', [
-                'request_type' => $request->type,
-                'has_file' => $request->hasFile('file'),
-                'file_size' => $request->hasFile('file') ? $request->file('file')->getSize() : 'N/A'
-            ]);
-            
-            // Validation des données d'entrée - Élargir les types de fichiers acceptés et augmenter la limite de taille
-            $validator = \Validator::make($request->all(), [
-                'file' => 'required|file|mimes:jpg,jpeg,png,mp4,mov,avi,webm,mkv,flv,wmv|max:204800', // Augmenter à 200MB max
+            // Validation des données d'entrée - Élargir les types de fichiers acceptés
+            $request->validate([
+                'file' => 'required|file|mimes:jpg,jpeg,png,mp4,mov,avi,webm,mkv,flv,wmv|max:102400',
                 'title' => 'required',
                 'type' => 'required|in:photo,video',
                 'category_id' => 'nullable|exists:categories,id'
             ]);
-            
-            if ($validator->fails()) {
-                \Log::error('Validation échouée', [
-                    'errors' => $validator->errors()->toArray(),
-                    'file_type' => $request->hasFile('file') ? $request->file('file')->getMimeType() : 'N/A',
-                    'file_extension' => $request->hasFile('file') ? $request->file('file')->getClientOriginalExtension() : 'N/A'
-                ]);
-                return response()->json([
-                    'message' => 'Validation échouée',
-                    'errors' => $validator->errors()
-                ], 422);
-            }
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Validation échouée', [
+                'message' => $e->getMessage(),
+                'errors' => $e->errors()
+            ]);
+            return response()->json([
+                'message' => 'Validation échouée',
+                'errors' => $e->errors()
+            ], 422);
         } catch (\Exception $e) {
             \Log::error('Exception lors de la validation', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'message' => $e->getMessage()
             ]);
             return response()->json([
                 'message' => 'Erreur de validation',
@@ -91,29 +79,12 @@ class MediaController extends Controller
                 ], 400);
             }
             
-            // Déterminer le type de ressource pour Cloudinary
-            $resourceType = 'auto'; // Par défaut, laissons Cloudinary détecter
-            $isVideo = false;
-            
-            // Si c'est une vidéo, spécifier le type de ressource explicitement
-            if ($request->type === 'video' || 
-                strpos($file->getMimeType(), 'video/') === 0 ||
-                in_array(strtolower($file->getClientOriginalExtension()), ['mp4', 'mov', 'avi', 'webm', 'mkv', 'flv', 'wmv'])) {
-                $resourceType = 'video';
-                $isVideo = true;
-                \Log::info('Fichier identifié comme vidéo', [
-                    'extension' => $file->getClientOriginalExtension(),
-                    'mime_type' => $file->getMimeType()
-                ]);
-            }
-            
             // Debug - Log des informations avant l'upload
             \Log::info('Tentative d\'upload sur Cloudinary', [
                 'file_name' => $file->getClientOriginalName(),
                 'file_size' => $file->getSize(),
                 'file_type' => $file->getMimeType(),
                 'extension' => $file->getClientOriginalExtension(),
-                'resource_type' => $resourceType,
                 'cloudinary_config' => [
                     'cloud_name' => env('CLOUDINARY_CLOUD_NAME') ? 'Défini' : 'Non défini',
                     'api_key' => env('CLOUDINARY_KEY') ? 'Défini' : 'Non défini',
@@ -163,58 +134,35 @@ class MediaController extends Controller
                     'api_key' => substr($apiKey, 0, 3) . '...' // Ne log pas la clé complète
                 ]);
                 
-                // Options d'upload pour Cloudinary
-                $uploadOptions = [
-                    'folder' => $folder,
-                    'resource_type' => $resourceType,
-                    'timeout' => 120, // Augmenter le timeout pour les vidéos volumineuses
+                // Utiliser l'instance Cloudinary directement
+                $config = [
+                    'cloud' => [
+                        'cloud_name' => $cloudName,
+                        'api_key' => $apiKey,
+                        'api_secret' => $apiSecret
+                    ]
                 ];
-                
-                // Options supplémentaires pour les vidéos
-                if ($isVideo) {
-                    // Ajouter des options spécifiques pour l'upload de vidéo
-                    $uploadOptions = array_merge($uploadOptions, [
-                        'chunk_size' => 6000000, // 6MB chunks pour les uploads fragmentés
-                        'eager' => [ // Créer des versions optimisées
-                            [
-                                'format' => 'mp4',
-                                'transformation' => [
-                                    'quality' => 'auto',
-                                    'fetch_format' => 'auto'
-                                ]
-                            ]
-                        ],
-                        'eager_async' => true,
-                        'eager_notification_url' => env('APP_URL') . '/api/cloudinary/notification'
-                    ]);
-                }
-                
-                \Log::info('Options d\'upload Cloudinary:', $uploadOptions);
                 
                 // Utiliser le SDK directement
                 if (class_exists('Cloudinary\Cloudinary')) {
                     $cloudinary = new \Cloudinary\Cloudinary($config);
                     $uploadApi = $cloudinary->uploadApi();
-                    $uploadResult = $uploadApi->upload($filePath, $uploadOptions);
+                    $uploadResult = $uploadApi->upload($filePath, [
+                        'folder' => $folder,
+                        'resource_type' => 'auto'
+                    ]);
                     
                     $uploadedFileUrl = $uploadResult['secure_url'];
-                    \Log::info('Résultat de l\'upload via SDK Cloudinary', [
-                        'url' => $uploadedFileUrl,
-                        'public_id' => $uploadResult['public_id'] ?? 'Non disponible',
-                        'resource_type' => $uploadResult['resource_type'] ?? 'Non disponible'
-                    ]);
                 } 
                 // Fallback vers la façade Laravel si disponible
                 else if (class_exists('CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary')) {
                     // Upload avec l'instance configurée explicitement
-                    $uploadResult = \CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::upload($filePath, $uploadOptions);
+                    $uploadResult = \CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::upload($filePath, [
+                        'folder' => $folder,
+                        'resource_type' => 'auto'
+                    ]);
                     
                     $uploadedFileUrl = $uploadResult->getSecurePath();
-                    \Log::info('Résultat de l\'upload via façade Laravel Cloudinary', [
-                        'url' => $uploadedFileUrl,
-                        'public_id' => $uploadResult->getPublicId() ?? 'Non disponible',
-                        'resource_type' => $uploadResult->getResourceType() ?? 'Non disponible'
-                    ]);
                 } else {
                     throw new \Exception("Aucun SDK Cloudinary disponible");
                 }
@@ -478,24 +426,6 @@ class MediaController extends Controller
                 'media_path' => $media->file_path
             ]);
             
-            // Vérifier si le média existe
-            if (!$media || !$media->exists) {
-                \Log::error('Erreur: Média non trouvé pour la suppression', [
-                    'media_id' => $media->id ?? 'null'
-                ]);
-                return response()->json([
-                    'message' => 'Erreur: Média non trouvé',
-                    'error' => 'Media not found'
-                ], 404);
-            }
-            
-            // Stocker les informations du média avant suppression pour le log
-            $mediaInfo = [
-                'id' => $media->id,
-                'title' => $media->title,
-                'file_path' => $media->file_path
-            ];
-            
             // Supprimer de Cloudinary si c'est une URL Cloudinary
             if ($this->isCloudinaryUrl($media->file_path)) {
                 $deleteResult = $this->deleteFromCloudinary($media->file_path);
@@ -507,60 +437,18 @@ class MediaController extends Controller
                 \Log::info('Le média n\'est pas hébergé sur Cloudinary, suppression de l\'entrée en BDD uniquement');
             }
             
-            try {
-                // Supprimer l'entrée de la base de données avec force
-                $deleteResult = $media->delete();
-                
-                \Log::info('Résultat de la suppression de la BDD:', [
-                    'result' => $deleteResult ? 'Succès' : 'Échec',
-                    'media_info' => $mediaInfo
-                ]);
-                
-                // Double vérification que le média a bien été supprimé
-                $checkMedia = Media::find($mediaInfo['id']);
-                if ($checkMedia) {
-                    \Log::warning('Le média existe toujours après tentative de suppression', [
-                        'media_id' => $mediaInfo['id']
-                    ]);
-                    
-                    // Tentative de suppression avec une requête SQL directe
-                    try {
-                        \DB::table('media')->where('id', $mediaInfo['id'])->delete();
-                        \Log::info('Suppression effectuée par requête SQL directe');
-                        
-                        // Vérifier à nouveau
-                        $recheckMedia = Media::find($mediaInfo['id']);
-                        if ($recheckMedia) {
-                            \Log::error('Le média existe toujours après suppression SQL directe', [
-                                'media_id' => $mediaInfo['id']
-                            ]);
-                        } else {
-                            \Log::info('Suppression SQL directe réussie, média supprimé');
-                        }
-                    } catch (\Exception $sqlEx) {
-                        \Log::error('Erreur lors de la suppression SQL directe', [
-                            'error' => $sqlEx->getMessage()
-                        ]);
-                    }
-                } else {
-                    \Log::info('Vérification réussie: le média a bien été supprimé de la BDD');
-                }
-            } catch (\Exception $dbEx) {
-                \Log::error('Exception lors de la suppression de la base de données', [
-                    'error' => $dbEx->getMessage(),
-                    'trace' => $dbEx->getTraceAsString()
-                ]);
-                
-                throw $dbEx; // Relancer l'exception pour le catch principal
-            }
+            // Supprimer l'entrée de la base de données
+            $deleteResult = $media->delete();
             
-            return response()->json([
-                'message' => 'Média supprimé avec succès',
-                'media_info' => $mediaInfo
-            ], 200);
+            \Log::info('Suppression du média de la base de données', [
+                'result' => $deleteResult,
+                'media_id' => $media->id
+            ]);
+            
+            return response()->json(['message' => 'Média supprimé avec succès'], 200);
         } catch (\Exception $e) {
             \Log::error('Erreur lors de la suppression du média', [
-                'media_id' => isset($media) ? $media->id : 'null',
+                'media_id' => $media->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -623,7 +511,7 @@ class MediaController extends Controller
     /**
      * Supprime un fichier de Cloudinary
      */
-    protected function deleteFromCloudinary($url)
+    private function deleteFromCloudinary($url)
     {
         try {
             // Extraire l'ID public du fichier de l'URL
