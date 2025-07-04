@@ -91,29 +91,6 @@ class MediaController extends Controller
                 ], 400);
             }
             
-            // Traitement spécial pour les vidéos
-            if ($request->type === 'video') {
-                \Log::info('Traitement spécial pour vidéo', [
-                    'file_name' => $file->getClientOriginalName(),
-                    'mime_type' => $file->getMimeType(),
-                    'extension' => $file->getClientOriginalExtension()
-                ]);
-                
-                // Liste des extensions vidéo courantes
-                $videoExtensions = ['mp4', 'mov', 'avi', 'wmv', 'flv', 'webm', 'mkv', '3gp', 'mpeg', 'mpg', 'm4v'];
-                $extension = strtolower($file->getClientOriginalExtension());
-                
-                if (!in_array($extension, $videoExtensions) && !str_starts_with($file->getMimeType(), 'video/')) {
-                    \Log::warning('Type de fichier vidéo non reconnu', [
-                        'extension' => $extension,
-                        'mime_type' => $file->getMimeType()
-                    ]);
-                    
-                    // On continue quand même, on fait confiance à l'utilisateur
-                    \Log::info('Continuation malgré type non reconnu');
-                }
-            }
-            
             // Debug - Log des informations avant l'upload
             \Log::info('Tentative d\'upload sur Cloudinary', [
                 'file_name' => $file->getClientOriginalName(),
@@ -129,84 +106,27 @@ class MediaController extends Controller
                 ]
             ]);
             
-            // Vérification spéciale pour les vidéos
-            if ($request->type === 'video') {
-                \Log::info('Traitement d\'une vidéo', [
-                    'mime_type' => $file->getMimeType(),
-                    'extension' => $file->getClientOriginalExtension(),
-                    'size_mb' => round($file->getSize() / (1024 * 1024), 2)
-                ]);
-            }
-            
-            // Déterminer le dossier et les options en fonction du type
+            // Déterminer le dossier en fonction du type
             $folder = 'acos_football/photos';
-            $options = [];
-            
             if ($request->type === 'video') {
                 $folder = 'acos_football/videos';
-                
-                // Options spécifiques pour les vidéos
-                $options = [
-                    'resource_type' => 'video', // IMPORTANT: forcer le type à vidéo
-                    'folder' => $folder,
-                    'use_filename' => true,
-                    'unique_filename' => true,
-                    'overwrite' => false,
-                    'chunk_size' => 6000000, // 6MB chunks pour les vidéos volumineuses
-                    'timeout' => 600, // 10 minutes timeout (augmenté)
-                    'eager' => [
-                        ['streaming_profile' => 'hd', 'format' => 'mp4'],
-                        ['quality' => 'auto', 'format' => 'mp4'] // Ajout d'une option pour qualité auto
-                    ],
-                    'eager_async' => true,
-                    'eager_notification_url' => env('APP_URL') . '/api/cloudinary-callback',
-                    'transformation' => [
-                        'quality' => 'auto',
-                        'fetch_format' => 'auto'
-                    ]
-                ];
-                
-                \Log::info('Options d\'upload vidéo configurées', $options);
-            } else {
-                // Options pour les photos et autres fichiers
-                $options = [
-                    'resource_type' => 'auto',
-                    'folder' => $folder,
-                    'use_filename' => true,
-                    'unique_filename' => true,
-                    'overwrite' => false,
-                ];
+            }
+            
+            // Options simplifiées pour tous les types de fichiers
+            $options = [
+                'resource_type' => 'auto',
+                'folder' => $folder,
+                'use_filename' => true,
+                'unique_filename' => true,
+                'overwrite' => false,
+            ];
+            
+            // Configuration spécifique pour les vidéos
+            if ($request->type === 'video') {
+                $options['resource_type'] = 'video';
             }
 
             try {
-                // Tentative d'upload sur Cloudinary avec les options spécifiques
-                \Log::info('Début upload Cloudinary avec options', [
-                    'resource_type' => $options['resource_type'],
-                    'folder' => $folder,
-                    'file_name' => $file->getClientOriginalName(),
-                    'file_size' => $file->getSize(),
-                    'file_mime' => $file->getMimeType()
-                ]);
-                
-                // Pour les vidéos, utiliser une approche spécifique
-                if ($request->type === 'video') {
-                    \Log::info('Utilisation de l\'upload spécial pour vidéo');
-                    
-                    // S'assurer que le resource_type est bien défini
-                    $options['resource_type'] = 'video';
-                    
-                    // Vérifier la taille de la vidéo et ajuster les options si nécessaire
-                    $fileSizeMB = round($file->getSize() / (1024 * 1024), 2);
-                    if ($fileSizeMB > 50) {
-                        \Log::info("Vidéo volumineuse détectée: {$fileSizeMB}MB - Ajustement des options d'upload");
-                        $options['chunk_size'] = 10000000; // 10MB chunks pour les très grosses vidéos
-                        $options['timeout'] = 900; // 15 minutes timeout
-                        
-                        // Ajout d'informations pour le suivi de l'upload
-                        $options['notification_url'] = env('APP_URL') . '/api/cloudinary-notification';
-                    }
-                }
-                
                 // Upload sur Cloudinary
                 $uploadResult = Cloudinary::upload($file->getRealPath(), $options);
                 
@@ -272,7 +192,6 @@ class MediaController extends Controller
                     ], 500);
                 }
             } catch (\Exception $cloudinaryError) {
-                // Log détaillé de l'erreur Cloudinary
                 \Log::error('Erreur Cloudinary détaillée', [
                     'message' => $cloudinaryError->getMessage(),
                     'trace' => $cloudinaryError->getTraceAsString(),
@@ -281,20 +200,19 @@ class MediaController extends Controller
                     'line' => $cloudinaryError->getLine()
                 ]);
                 
-                // Pas de fallback, retourner l'erreur directement
                 return response()->json([
                     'message' => 'Erreur lors de l\'upload sur Cloudinary',
                     'error' => $cloudinaryError->getMessage()
                 ], 500);
             }
         } catch (\Exception $e) {
-            \Log::error('Erreur générale lors du téléchargement du média', [
+            \Log::error('Erreur générale lors de la création du média', [
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
             
             return response()->json([
-                'message' => 'Erreur lors du téléchargement du média',
+                'message' => 'Erreur lors de la création du média',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -369,53 +287,21 @@ class MediaController extends Controller
                     
                     // Déterminer le dossier et les options en fonction du type
                     $folder = 'acos_football/photos';
-                    $options = [];
                     
-                    if ($request->type === 'video') {
+                    // Options simplifiées pour tous les types de fichiers
+                    $options = [
+                        'resource_type' => 'auto',
+                        'folder' => $folder,
+                        'use_filename' => true,
+                        'unique_filename' => true,
+                        'overwrite' => false,
+                    ];
+
+                    // Configuration spécifique pour les vidéos si nécessaire
+                    if ($media->type === 'video') {
                         $folder = 'acos_football/videos';
-                        
-                        // Options spécifiques pour les vidéos
-                        $options = [
-                            'resource_type' => 'video',
-                            'folder' => $folder,
-                            'use_filename' => true,
-                            'unique_filename' => true,
-                            'overwrite' => false,
-                            'chunk_size' => 6000000, // 6MB chunks pour les vidéos volumineuses
-                            'timeout' => 600, // 10 minutes timeout (augmenté)
-                            'eager' => [
-                                ['streaming_profile' => 'hd', 'format' => 'mp4'],
-                                ['quality' => 'auto', 'format' => 'mp4'] // Ajout d'une option pour qualité auto
-                            ],
-                            'eager_async' => true,
-                            'eager_notification_url' => env('APP_URL') . '/api/cloudinary-callback',
-                            'transformation' => [
-                                'quality' => 'auto',
-                                'fetch_format' => 'auto'
-                            ]
-                        ];
-                        
-                        \Log::info('Options d\'upload vidéo configurées pour mise à jour', $options);
-                        
-                        // Vérifier la taille de la vidéo et ajuster les options si nécessaire
-                        $fileSizeMB = round($file->getSize() / (1024 * 1024), 2);
-                        if ($fileSizeMB > 50) {
-                            \Log::info("Vidéo volumineuse détectée lors de la mise à jour: {$fileSizeMB}MB - Ajustement des options d'upload");
-                            $options['chunk_size'] = 10000000; // 10MB chunks pour les très grosses vidéos
-                            $options['timeout'] = 900; // 15 minutes timeout
-                            
-                            // Ajout d'informations pour le suivi de l'upload
-                            $options['notification_url'] = env('APP_URL') . '/api/cloudinary-notification';
-                        }
-                    } else {
-                        // Options pour les photos et autres fichiers
-                        $options = [
-                            'resource_type' => 'auto',
-                            'folder' => $folder,
-                            'use_filename' => true,
-                            'unique_filename' => true,
-                            'overwrite' => false,
-                        ];
+                        $options['folder'] = $folder;
+                        $options['resource_type'] = 'video';
                     }
 
                     try {
@@ -457,7 +343,10 @@ class MediaController extends Controller
                 
                 // Mettre à jour les autres champs
                 $media->title = $request->title ?? $media->title;
-                $media->type = $request->type ?? $media->type;
+                
+                // Ne pas modifier le type si on est en mode édition
+                // $media->type = $request->type ?? $media->type;
+                
                 $media->category_id = $request->category_id ?? $media->category_id;
                 
                 // Log avant sauvegarde
