@@ -28,6 +28,8 @@ class CorsMiddleware
             'http://localhost:5173',
             'https://heroic-gaufre-c8e8ae.netlify.app',
             'https://heroic-gaufre-c8e8ae.netlify.app/',
+            // Ajouter toutes les origines possibles
+            $origin // Autoriser dynamiquement l'origine de la requête
         ];
         
         // Vérifier si l'origine est autorisée
@@ -35,9 +37,10 @@ class CorsMiddleware
             $response->headers->set('Access-Control-Allow-Origin', $origin);
         }
         
-        $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-        $response->headers->set('Access-Control-Allow-Credentials', 'false');
+        $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+        $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-File-Name, X-File-Size, X-File-Type, Accept, Origin');
+        $response->headers->set('Access-Control-Allow-Credentials', 'true');
+        $response->headers->set('Access-Control-Max-Age', '86400'); // 24 heures
 
         return $response;
     }
