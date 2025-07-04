@@ -2,7 +2,6 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Validator;
 
 
 use App\Http\Controllers\{
@@ -264,51 +263,6 @@ Route::get('/diagnostic/cloudinary', function() {
     ];
     
     return response()->json($response);
-});
-
-// Endpoint de diagnostic pour les vidéos
-Route::post('/diagnostic/video-upload', function(Request $request) {
-    \Log::info('Diagnostic d\'upload vidéo', [
-        'all_data' => $request->all(),
-        'has_file' => $request->hasFile('file'),
-        'file_info' => $request->hasFile('file') ? [
-            'name' => $request->file('file')->getClientOriginalName(),
-            'size' => $request->file('file')->getSize(),
-            'mime' => $request->file('file')->getMimeType(),
-            'extension' => $request->file('file')->getClientOriginalExtension(),
-        ] : null,
-        'headers' => $request->headers->all()
-    ]);
-    
-    // Validation minimale
-    $validator = Validator::make($request->all(), [
-        'file' => 'required|file|max:204800', // 200MB max
-    ]);
-
-    if ($validator->fails()) {
-        \Log::error('Validation échouée pour le diagnostic vidéo', [
-            'errors' => $validator->errors()->toArray()
-        ]);
-        
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Validation échouée',
-            'errors' => $validator->errors()
-        ], 422);
-    }
-    
-    $file = $request->file('file');
-    
-    return response()->json([
-        'status' => 'success',
-        'message' => 'Fichier vidéo reçu correctement',
-        'file_info' => [
-            'name' => $file->getClientOriginalName(),
-            'size' => $file->getSize(),
-            'mime' => $file->getMimeType(),
-            'extension' => $file->getClientOriginalExtension(),
-        ]
-    ]);
 });
 
 // Routes admin pour Media
