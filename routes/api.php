@@ -22,9 +22,8 @@ use App\Http\Controllers\{
     UploadController
 };
 
-// Route de ping pour vérifier l'état du serveur
 Route::get('/ping', function () {
-    return response()->json(['status' => 'ok', 'message' => 'Server is running']);
+    return response()->json(['message' => 'API OK']);
 });
 
 // Routes API RESTful pour chaque ressource
@@ -40,6 +39,7 @@ Route::get('detailed-registrations', [RegistrationController::class, 'getDetaile
 Route::get('pending-registrations', [RegistrationController::class, 'getPendingRegistrations']);
 Route::post('registrations/{id}/accept', [RegistrationController::class, 'acceptRegistration']);
 Route::post('registrations/{id}/reject', [RegistrationController::class, 'rejectRegistration']);
+Route::apiResource('media', MediaController::class);
 Route::apiResource('news', NewsController::class);
 Route::apiResource('matches', MatchController::class);
 Route::apiResource('contacts', ContactController::class);
@@ -122,9 +122,14 @@ Route::get('/news-only', [NewsController::class, 'getNews']);
 // Routes spécifiques pour les médias
 Route::get('/photos', [MediaController::class, 'getPhotos']);
 Route::get('/videos', [MediaController::class, 'getVideos']);
+Route::get('/media', [MediaController::class, 'index']);
+Route::get('/media/category/{categoryId}', [MediaController::class, 'getByCategory']);
+Route::get('/media/{media}', [MediaController::class, 'show']);
+Route::post('/media', [MediaController::class, 'store']);
+Route::put('/media/{id}', [MediaController::class, 'update']);
+Route::delete('/media/{media}', [MediaController::class, 'destroy']);
 Route::get('/media/migrate-to-cloudinary', [MediaController::class, 'migrateToCloudinary']);
 Route::get('/media/check-storage', [MediaController::class, 'checkStorage']);
-Route::get('/media/category/{categoryId}', [MediaController::class, 'getByCategory']);
 
 // Routes pour l'administration des actualités/événements
 Route::prefix('admin')->group(function () {
@@ -256,3 +261,11 @@ Route::get('/diagnostic/cloudinary', function() {
     
     return response()->json($response);
 });
+
+// Routes admin pour Media
+Route::get('/admin/media', [App\Http\Controllers\Admin\MediaController::class, 'index']);
+Route::post('/admin/media', [App\Http\Controllers\Admin\MediaController::class, 'store']);
+Route::get('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'show']);
+Route::put('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'update']);
+Route::post('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'update']); // Route POST pour la mise à jour avec _method=PUT
+Route::delete('/admin/media/{id}', [App\Http\Controllers\Admin\MediaController::class, 'destroy']);

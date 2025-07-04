@@ -6,7 +6,6 @@ use App\Http\Controllers\MediaController as BaseMediaController;
 use App\Models\Media;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Log;
 
 class MediaController extends BaseMediaController
 {
@@ -15,9 +14,6 @@ class MediaController extends BaseMediaController
      */
     public function index(Request $request)
     {
-        Log::info('Admin\MediaController::index appelé', [
-            'request_params' => $request->all()
-        ]);
         return parent::index($request);
     }
 
@@ -26,11 +22,6 @@ class MediaController extends BaseMediaController
      */
     public function store(Request $request)
     {
-        Log::info('Admin\MediaController::store appelé', [
-            'request_has_file' => $request->hasFile('file'),
-            'request_all' => $request->all(),
-            'request_files' => $request->allFiles()
-        ]);
         return parent::store($request);
     }
 
@@ -39,9 +30,6 @@ class MediaController extends BaseMediaController
      */
     public function show($id)
     {
-        Log::info('Admin\MediaController::show appelé', [
-            'id' => $id
-        ]);
         $media = Media::findOrFail($id);
         return response()->json($media);
     }
@@ -51,12 +39,6 @@ class MediaController extends BaseMediaController
      */
     public function update(Request $request, $id)
     {
-        Log::info('Admin\MediaController::update appelé', [
-            'id' => $id,
-            'request_has_file' => $request->hasFile('file'),
-            'request_all' => $request->all(),
-            'request_files' => $request->allFiles()
-        ]);
         return parent::update($request, $id);
     }
 
@@ -65,9 +47,6 @@ class MediaController extends BaseMediaController
      */
     public function destroy($id)
     {
-        Log::info('Admin\MediaController::destroy appelé', [
-            'id' => $id
-        ]);
         // Utiliser la méthode destroy du contrôleur parent
         // mais avec un paramètre ID au lieu d'un objet Media
         $media = Media::findOrFail($id);
