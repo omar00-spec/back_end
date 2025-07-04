@@ -45,6 +45,15 @@ class MediaController extends Controller
         try {
             $file = $request->file('file');
             
+            // Ajouter cette vérification pour s'assurer que le fichier existe
+            if (!$file) {
+                \Log::error('Fichier non reçu dans la requête');
+                return response()->json([
+                    'message' => 'Aucun fichier n\'a été reçu',
+                    'error' => 'file_missing'
+                ], 400);
+            }
+            
             // Debug - Log des informations avant l'upload
             \Log::info('Tentative d\'upload sur Cloudinary', [
                 'file_name' => $file->getClientOriginalName(),
@@ -52,7 +61,18 @@ class MediaController extends Controller
                 'file_type' => $file->getMimeType()
             ]);
             
-            // Upload sur Cloudinary avec try/catch supplémentaire pour capturer l'erreur spécifique à Cloudinary
+            // SOLUTION TEMPORAIRE: Désactiver Cloudinary et utiliser une URL fixe
+            // Stockage local du fichier pour debug
+            $fileName = time() . '_' . $file->getClientOriginalName();
+            $localPath = $file->storeAs('media', $fileName, 'public');
+            
+            // URL temporaire pour tester sans Cloudinary
+            $uploadedFileUrl = url('storage/' . $localPath);
+            
+            \Log::info('Stockage local réussi', ['path' => $localPath, 'url' => $uploadedFileUrl]);
+            
+            /*
+            // Upload sur Cloudinary - COMMENTÉ TEMPORAIREMENT
             try {
                 $uploadedFileUrl = cloudinary()->upload($file->getRealPath(), [
                     'folder' => 'acos_football/' . $request->type . 's',
@@ -67,13 +87,14 @@ class MediaController extends Controller
                 ]);
                 throw $cloudinaryError; // Relancer pour être capturé par le catch externe
             }
+            */
             
             // Créer l'entrée dans la base de données
             $media = new Media();
             $media->title = $request->title;
             $media->type = $request->type;
             $media->category_id = $request->category_id;
-            $media->file_path = $uploadedFileUrl; // URL Cloudinary
+            $media->file_path = $uploadedFileUrl; // URL locale temporairement
             $media->save();
             
             \Log::info('Média sauvegardé en BDD', ['id' => $media->id, 'url' => $media->file_path]);
