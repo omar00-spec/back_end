@@ -36,6 +36,12 @@ class MediaController extends Controller
 
     public function store(Request $request)
     {
+        \Log::info('Début de la méthode store de MediaController', [
+            'request_all' => $request->all(),
+            'request_has_file' => $request->hasFile('file'),
+            'files' => $request->allFiles()
+        ]);
+        
         // Validation des données avec des règles plus permissives pour les vidéos
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
@@ -131,19 +137,19 @@ class MediaController extends Controller
                         'url' => $uploadedFileUrl
                     ]);
                 } else {
-                \Log::info("Configuration Cloudinary explicite", [
-                    'cloud_name' => $cloudName,
-                    'api_key' => substr($apiKey, 0, 3) . '...' // Ne log pas la clé complète
-                ]);
-                
-                // Utiliser l'instance Cloudinary directement
-                $config = [
-                    'cloud' => [
+                    \Log::info("Configuration Cloudinary explicite", [
                         'cloud_name' => $cloudName,
-                        'api_key' => $apiKey,
-                        'api_secret' => $apiSecret
-                    ]
-                ];
+                        'api_key' => substr($apiKey, 0, 3) . '...' // Ne log pas la clé complète
+                    ]);
+                    
+                    // Utiliser l'instance Cloudinary directement
+                    $config = [
+                        'cloud' => [
+                            'cloud_name' => $cloudName,
+                            'api_key' => $apiKey,
+                            'api_secret' => $apiSecret
+                        ]
+                    ];
                     
                     // Initialiser une variable pour l'URL du fichier uploadé
                     $uploadedFileUrl = null;
@@ -155,130 +161,111 @@ class MediaController extends Controller
                     } elseif ($request->type === 'photo') {
                         $resourceType = 'image';
                     }
-                
-                // Utiliser le SDK directement
-                if (class_exists('Cloudinary\Cloudinary')) {
-                    $cloudinary = new \Cloudinary\Cloudinary($config);
-                    $uploadApi = $cloudinary->uploadApi();
+                    
+                    // Utiliser le SDK directement
+                    if (class_exists('Cloudinary\Cloudinary')) {
+                        $cloudinary = new \Cloudinary\Cloudinary($config);
+                        $uploadApi = $cloudinary->uploadApi();
                         
                         \Log::info("Tentative d'upload avec le SDK Cloudinary", [
                             'resource_type' => $resourceType,
                             'folder' => $folder
                         ]);
                         
-                    $uploadResult = $uploadApi->upload($filePath, [
-                        'folder' => $folder,
-                            'resource_type' => $resourceType
-                    ]);
-                    
-                    $uploadedFileUrl = $uploadResult['secure_url'];
-                        \Log::info("Upload réussi avec SDK Cloudinary", ['url' => $uploadedFileUrl]);
-                } 
-                // Fallback vers la façade Laravel si disponible
-                else if (class_exists('CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary')) {
-                    // Upload avec l'instance configurée explicitement
+                        try {
+                            $uploadResult = $uploadApi->upload($filePath, [
+                                'folder' => $folder,
+                                'resource_type' => $resourceType
+                            ]);
+                            
+                            $uploadedFileUrl = $uploadResult['secure_url'];
+                            \Log::info("Upload réussi avec SDK Cloudinary", ['url' => $uploadedFileUrl]);
+                        } catch (\Exception $cloudinaryError) {
+                            \Log::error("Erreur lors de l'upload avec le SDK Cloudinary", [
+                                'message' => $cloudinaryError->getMessage(),
+                                'trace' => $cloudinaryError->getTraceAsString()
+                            ]);
+                            throw $cloudinaryError;
+                        }
+                    } 
+                    // Fallback vers la façade Laravel si disponible
+                    else if (class_exists('CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary')) {
+                        // Upload avec l'instance configurée explicitement
                         \Log::info("Tentative d'upload avec la façade Cloudinary Laravel", [
                             'resource_type' => $resourceType,
                             'folder' => $folder
                         ]);
                         
-                    $uploadResult = \CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::upload($filePath, [
-                        'folder' => $folder,
-                            'resource_type' => $resourceType
-                    ]);
-                    
-                    $uploadedFileUrl = $uploadResult->getSecurePath();
-                        \Log::info("Upload réussi avec façade Cloudinary Laravel", ['url' => $uploadedFileUrl]);
-                } else {
-                    throw new \Exception("Aucun SDK Cloudinary disponible");
+                        try {
+                            $uploadResult = \CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::upload($filePath, [
+                                'folder' => $folder,
+                                'resource_type' => $resourceType
+                            ]);
+                            
+                            $uploadedFileUrl = $uploadResult->getSecurePath();
+                            \Log::info("Upload réussi avec façade Cloudinary Laravel", ['url' => $uploadedFileUrl]);
+                        } catch (\Exception $cloudinaryError) {
+                            \Log::error("Erreur lors de l'upload avec la façade Cloudinary Laravel", [
+                                'message' => $cloudinaryError->getMessage(),
+                                'trace' => $cloudinaryError->getTraceAsString()
+                            ]);
+                            throw $cloudinaryError;
+                        }
+                    } else {
+                        throw new \Exception("Aucun SDK Cloudinary disponible");
                     }
                 }
                 
                 // Vérifier que l'URL a bien été obtenue
                 if (empty($uploadedFileUrl)) {
-                    throw new \Exception("L'URL du fichier uploadé est vide");
-                }
-                
-                \Log::info('Upload Cloudinary réussi', ['url' => $uploadedFileUrl]);
-            } catch (\Exception $cloudinaryError) {
-                // Log détaillé de l'erreur Cloudinary
-                \Log::error('Erreur Cloudinary détaillée', [
-                    'message' => $cloudinaryError->getMessage(),
-                    'trace' => $cloudinaryError->getTraceAsString(),
-                    'code' => $cloudinaryError->getCode(),
-                    'file' => $cloudinaryError->getFile(),
-                    'line' => $cloudinaryError->getLine()
-                ]);
-                
-                // Pas de fallback, retourner l'erreur directement
-                return response()->json([
-                    'message' => 'Erreur lors de l\'upload sur Cloudinary',
-                    'error' => $cloudinaryError->getMessage()
-                ], 500);
-            }
-            
-            // Créer l'entrée dans la base de données
-            try {
-                // Vérifier à nouveau que l'URL est définie
-                if (empty($uploadedFileUrl)) {
-                    \Log::error('URL de fichier vide avant création en BDD');
-                    return response()->json([
-                        'message' => 'URL du fichier vide, impossible de créer l\'entrée en base de données',
-                        'error' => 'empty_file_url'
-                    ], 500);
+                    \Log::warning("L'URL du fichier uploadé est vide, mais on continue avec un champ null");
                 }
                 
                 $media = new Media();
                 $media->title = $request->title;
                 $media->type = $request->type;
                 $media->category_id = $request->category_id;
-                $media->file_path = $uploadedFileUrl; // URL Cloudinary
+                $media->file_path = $uploadedFileUrl ?? null; // Permettre une valeur null
                 
                 // Log avant sauvegarde
                 \Log::info('Tentative de sauvegarde média en BDD', [
                     'title' => $media->title,
                     'type' => $media->type,
                     'category_id' => $media->category_id,
-                    'file_path' => $media->file_path
+                    'file_path' => $media->file_path ?? 'NULL'
                 ]);
                 
                 $media->save();
                 
                 \Log::info('Média sauvegardé en BDD', [
                     'id' => $media->id, 
-                    'url' => $media->file_path,
-                    'type' => $media->type,
-                    'category_id' => $media->category_id
+                    'url' => $media->file_path
+                ]);
+                
+                // Retourner une réponse formatée avec le média créé
+                return response()->json([
+                    'message' => 'Média ajouté avec succès',
+                    'media' => $media
+                ], 201);
+            } catch (\Exception $e) {
+                \Log::error('Erreur lors de la création du média', [
+                    'message' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
                 ]);
                 
                 return response()->json([
-                    'message' => 'Média téléchargé avec succès sur Cloudinary',
-                    'media' => $media
-                ], 201);
-            } catch (\Exception $dbError) {
-                \Log::error('Erreur lors de la sauvegarde en base de données', [
-                    'error' => $dbError->getMessage(),
-                    'trace' => $dbError->getTraceAsString(),
-                    'media_data' => [
-                        'title' => $request->title,
-                        'type' => $request->type,
-                        'category_id' => $request->category_id,
-                        'file_path' => $uploadedFileUrl ?? 'NULL'
-                    ]
-                ]);
-                return response()->json([
-                    'message' => 'Erreur lors de la sauvegarde en base de données',
-                    'error' => $dbError->getMessage()
+                    'message' => 'Erreur lors de la création du média',
+                    'error' => $e->getMessage()
                 ], 500);
             }
         } catch (\Exception $e) {
-            \Log::error('Erreur générale lors du téléchargement du média', [
+            \Log::error('Erreur globale lors de la création du média', [
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
             
             return response()->json([
-                'message' => 'Erreur lors du téléchargement du média',
+                'message' => 'Erreur globale lors de la création du média',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -298,6 +285,13 @@ class MediaController extends Controller
 
     public function update(Request $request, $id)
     {
+        \Log::info('Début de la méthode update de MediaController', [
+            'id' => $id,
+            'request_all' => $request->all(),
+            'request_has_file' => $request->hasFile('file'),
+            'files' => $request->allFiles()
+        ]);
+        
         try {
             $media = Media::findOrFail($id);
             
@@ -496,16 +490,16 @@ class MediaController extends Controller
                     'id' => $media->id, 
                     'url' => $media->file_path,
                     'type' => $media->type,
-                    'category_id' => $media->category_id
                 ]);
-
+                
+                // Retourner une réponse formatée avec le média mis à jour
                 return response()->json([
-                    'message' => 'Média mis à jour avec succès !',
+                    'message' => 'Média mis à jour avec succès',
                     'media' => $media
                 ]);
             } catch (\Exception $e) {
                 \Log::error('Erreur lors de la mise à jour du média', [
-                    'media_id' => $id,
+                    'id' => $id,
                     'message' => $e->getMessage(),
                     'trace' => $e->getTraceAsString()
                 ]);
@@ -516,13 +510,14 @@ class MediaController extends Controller
                 ], 500);
             }
         } catch (\Exception $e) {
-            \Log::error('Média non trouvé ou erreur générale', [
+            \Log::error('Erreur lors de la recherche du média à mettre à jour', [
                 'id' => $id,
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             
             return response()->json([
-                'message' => 'Média non trouvé ou erreur générale',
+                'message' => 'Erreur lors de la recherche du média',
                 'error' => $e->getMessage()
             ], 404);
         }

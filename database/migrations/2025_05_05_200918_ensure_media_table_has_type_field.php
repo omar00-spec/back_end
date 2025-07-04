@@ -25,6 +25,9 @@ return new class extends Migration
             // Vérifier si la colonne 'file_path' n'existe pas déjà
             if (!Schema::hasColumn('media', 'file_path')) {
                 $table->string('file_path')->nullable()->after('title');
+            } else {
+                // Si la colonne existe déjà, la rendre nullable
+                $table->string('file_path')->nullable()->change();
             }
         });
     }

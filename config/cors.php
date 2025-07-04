@@ -12,6 +12,7 @@ return [
     'http://localhost:3001',
     'https://heroic-gaufre-c8e8ae.netlify.app',
     'https://acos-football.netlify.app',
+    '*', // Autoriser toutes les origines pour le débogage
 ],
 
 // Tu peux garder ceci si tu veux autoriser tous les sous-domaines .netlify.app
@@ -21,9 +22,9 @@ return [
 
 'allowed_headers' => ['*'],
 
-'exposed_headers' => [],
+'exposed_headers' => ['*'],
 
-'max_age' => 0,
+'max_age' => 86400, // 24 heures
 
-'supports_credentials' => false,
+'supports_credentials' => true,
 ];
