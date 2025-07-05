@@ -176,6 +176,27 @@ class MediaController extends Controller
                     $resourceType = 'auto';
                     if ($request->type === 'video') {
                         $resourceType = 'video';
+                        
+                        // Liste des extensions vidéo supportées
+                        $supportedVideoExtensions = [
+                            'mp4', 'mov', 'avi', 'wmv', 'flv', 'webm', 'mkv', 'm4v', '3gp', 'mpeg', 'mpg'
+                        ];
+                        
+                        // Vérifier si l'extension est supportée
+                        $extension = strtolower($file->getClientOriginalExtension());
+                        if (!in_array($extension, $supportedVideoExtensions)) {
+                            \Log::warning("Extension vidéo potentiellement non supportée: {$extension}", [
+                                'file_name' => $file->getClientOriginalName(),
+                                'mime_type' => $file->getMimeType()
+                            ]);
+                        }
+                        
+                        // Log détaillé pour les vidéos
+                        \Log::info("Traitement d'une vidéo", [
+                            'extension' => $extension,
+                            'mime_type' => $file->getMimeType(),
+                            'size' => $file->getSize()
+                        ]);
                     } elseif ($request->type === 'photo') {
                         $resourceType = 'image';
                     }
@@ -191,10 +212,18 @@ class MediaController extends Controller
                         ]);
                         
                         try {
-                            $uploadResult = $uploadApi->upload($filePath, [
+                            // Options d'upload de base
+                            $uploadOptions = [
                                 'folder' => $folder,
                                 'resource_type' => $resourceType
-                            ]);
+                            ];
+                            
+                            // Optimiser les options pour les vidéos
+                            if ($request->type === 'video') {
+                                $uploadOptions = $this->optimizeVideoUploadOptions($file, $uploadOptions);
+                            }
+                            
+                            $uploadResult = $uploadApi->upload($filePath, $uploadOptions);
                             
                             $uploadedFileUrl = $uploadResult['secure_url'];
                             \Log::info("Upload réussi avec SDK Cloudinary", ['url' => $uploadedFileUrl]);
@@ -420,6 +449,27 @@ class MediaController extends Controller
                             $mediaType = $request->type ?? $media->type;
                             if ($mediaType === 'video') {
                                 $resourceType = 'video';
+                                
+                                // Liste des extensions vidéo supportées
+                                $supportedVideoExtensions = [
+                                    'mp4', 'mov', 'avi', 'wmv', 'flv', 'webm', 'mkv', 'm4v', '3gp', 'mpeg', 'mpg'
+                                ];
+                                
+                                // Vérifier si l'extension est supportée
+                                $extension = strtolower($file->getClientOriginalExtension());
+                                if (!in_array($extension, $supportedVideoExtensions)) {
+                                    \Log::warning("Extension vidéo potentiellement non supportée lors de la mise à jour: {$extension}", [
+                                        'file_name' => $file->getClientOriginalName(),
+                                        'mime_type' => $file->getMimeType()
+                                    ]);
+                                }
+                                
+                                // Log détaillé pour les vidéos
+                                \Log::info("Traitement d'une vidéo lors de la mise à jour", [
+                                    'extension' => $extension,
+                                    'mime_type' => $file->getMimeType(),
+                                    'size' => $file->getSize()
+                                ]);
                             } elseif ($mediaType === 'photo') {
                                 $resourceType = 'image';
                             }
@@ -436,10 +486,19 @@ class MediaController extends Controller
                                     'folder' => $folder
                                 ]);
                                 
-                            $uploadResult = $uploadApi->upload($filePath, [
+                            // Options d'upload spécifiques selon le type
+                            $uploadOptions = [
                                 'folder' => $folder,
-                                    'resource_type' => $resourceType
-                            ]);
+                                'resource_type' => $resourceType
+                            ];
+                            
+                            // Options spécifiques pour les vidéos
+                            if ($mediaType === 'video') {
+                                // Optimiser les options pour les vidéos
+                                $uploadOptions = $this->optimizeVideoUploadOptions($file, $uploadOptions);
+                            }
+                            
+                            $uploadResult = $uploadApi->upload($filePath, $uploadOptions);
                             
                             $uploadedFileUrl = $uploadResult['secure_url'];
                                 \Log::info("Upload réussi avec SDK Cloudinary", ['url' => $uploadedFileUrl]);
@@ -543,37 +602,37 @@ class MediaController extends Controller
 
     public function destroy(Media $media)
     {
+        \Log::info('Tentative de suppression du média', [
+            'id' => $media->id,
+            'type' => $media->type,
+            'file_path' => $media->file_path
+        ]);
+        
         try {
-            \Log::info('Tentative de suppression du média', [
-                'media_id' => $media->id,
-                'media_title' => $media->title,
-                'media_path' => $media->file_path
-            ]);
-            
-            // Supprimer de Cloudinary si c'est une URL Cloudinary
+            // Si le fichier est stocké sur Cloudinary, le supprimer de Cloudinary
             if ($this->isCloudinaryUrl($media->file_path)) {
-                $deleteResult = $this->deleteFromCloudinary($media->file_path);
-                \Log::info('Résultat de la suppression sur Cloudinary', [
-                    'result' => $deleteResult,
-                    'media_id' => $media->id
-                ]);
+                $result = $this->deleteFromCloudinary($media->file_path);
+                \Log::info('Résultat de la suppression Cloudinary', $result);
             } else {
-                \Log::info('Le média n\'est pas hébergé sur Cloudinary, suppression de l\'entrée en BDD uniquement');
+                // Si le fichier est stocké localement, le supprimer du stockage local
+                $filePath = $this->getLocalPathFromUrl($media->file_path);
+                if ($filePath && \Storage::exists($filePath)) {
+                    \Storage::delete($filePath);
+                    \Log::info('Fichier local supprimé', ['path' => $filePath]);
+                } else {
+                    \Log::warning('Fichier local non trouvé', ['path' => $filePath]);
+                }
             }
             
             // Supprimer l'entrée de la base de données
-            $deleteResult = $media->delete();
+            $media->delete();
+            \Log::info('Média supprimé de la base de données', ['id' => $media->id]);
             
-            \Log::info('Suppression du média de la base de données', [
-                'result' => $deleteResult,
-                'media_id' => $media->id
-            ]);
-            
-            return response()->json(['message' => 'Média supprimé avec succès'], 200);
+            return response()->json(['message' => 'Média supprimé avec succès']);
         } catch (\Exception $e) {
             \Log::error('Erreur lors de la suppression du média', [
-                'media_id' => $media->id,
-                'error' => $e->getMessage(),
+                'id' => $media->id,
+                'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
             
@@ -582,6 +641,39 @@ class MediaController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+    
+    /**
+     * Extraire le chemin local à partir d'une URL
+     */
+    private function getLocalPathFromUrl($url)
+    {
+        // Si l'URL est vide ou null, retourner null
+        if (empty($url)) {
+            return null;
+        }
+        
+        // Si c'est une URL complète
+        if (filter_var($url, FILTER_VALIDATE_URL)) {
+            // Extraire le chemin relatif de l'URL
+            $parsedUrl = parse_url($url);
+            if (isset($parsedUrl['path'])) {
+                $path = $parsedUrl['path'];
+                // Chercher "storage/" dans le chemin
+                $storagePos = strpos($path, 'storage/');
+                if ($storagePos !== false) {
+                    $relativePath = substr($path, $storagePos);
+                    return 'public/' . substr($relativePath, 8); // Convertir "storage/xxx" en "public/xxx"
+                }
+            }
+        } else {
+            // Si c'est un chemin relatif
+            if (strpos($url, 'storage/') === 0) {
+                return 'public/' . substr($url, 8); // Convertir "storage/xxx" en "public/xxx"
+            }
+        }
+        
+        return null;
     }
 
     /**
@@ -633,97 +725,141 @@ class MediaController extends Controller
     }
 
     /**
-     * Supprime un fichier de Cloudinary
+     * Supprimer un fichier de Cloudinary
      */
     private function deleteFromCloudinary($url)
     {
+        \Log::info('Tentative de suppression sur Cloudinary', ['url' => $url]);
+        
+        // Si l'URL est vide, retourner
+        if (empty($url)) {
+            return ['status' => 'error', 'message' => 'URL vide'];
+        }
+        
         try {
-            // Extraire l'ID public du fichier de l'URL
-            $parts = parse_url($url);
-            if (!isset($parts['path'])) {
-                \Log::warning('URL Cloudinary invalide pour la suppression', ['url' => $url]);
-                return false;
+            // Extraire l'ID public de l'URL Cloudinary
+            $publicId = $this->extractPublicIdFromUrl($url);
+            
+            if (!$publicId) {
+                return ['status' => 'error', 'message' => 'Impossible d\'extraire l\'ID public de l\'URL'];
             }
             
-            $path = $parts['path'];
-            $pathParts = explode('/', $path);
+            \Log::info('ID public extrait', ['public_id' => $publicId]);
             
-            // Déterminer si c'est une image ou une vidéo
+            // Déterminer le type de ressource (image ou vidéo)
             $resourceType = 'image';
-            if (strpos($path, '/video/') !== false) {
+            if (strpos($url, '/video/') !== false) {
                 $resourceType = 'video';
+                \Log::info('Ressource détectée comme vidéo');
             }
             
-            // Trouver les parties pertinentes (après /upload/)
-            $uploadIndex = array_search('upload', $pathParts);
-            if ($uploadIndex !== false) {
-                // Construire le public_id en prenant tout après "upload"
-                $publicId = implode('/', array_slice($pathParts, $uploadIndex + 2));
+            // Récupérer la configuration Cloudinary
+            $cloudName = env('CLOUDINARY_CLOUD_NAME');
+            $apiKey = env('CLOUDINARY_KEY');
+            $apiSecret = env('CLOUDINARY_SECRET');
+            
+            if (!$cloudName || !$apiKey || !$apiSecret) {
+                \Log::error('Configuration Cloudinary incomplète');
+                return ['status' => 'error', 'message' => 'Configuration Cloudinary incomplète'];
+            }
+            
+            // Utiliser le SDK Cloudinary pour supprimer le fichier
+            $config = [
+                'cloud' => [
+                    'cloud_name' => $cloudName,
+                    'api_key' => $apiKey,
+                    'api_secret' => $apiSecret
+                ]
+            ];
+            
+            if (class_exists('Cloudinary\Cloudinary')) {
+                $cloudinary = new \Cloudinary\Cloudinary($config);
+                $uploadApi = $cloudinary->uploadApi();
                 
-                // Enlever l'extension du fichier pour obtenir le public_id correct
-                $publicId = pathinfo($publicId, PATHINFO_DIRNAME) . '/' . pathinfo($publicId, PATHINFO_FILENAME);
-                $publicId = ltrim($publicId, '/'); // Enlever le slash initial s'il y en a un
-                
-                \Log::info('Tentative de suppression sur Cloudinary', [
+                \Log::info('Tentative de suppression avec le SDK Cloudinary', [
                     'public_id' => $publicId,
-                    'resource_type' => $resourceType,
-                    'url' => $url
+                    'resource_type' => $resourceType
                 ]);
                 
-                // Configurer Cloudinary
-                $cloudName = env('CLOUDINARY_CLOUD_NAME');
-                $apiKey = env('CLOUDINARY_API_KEY', env('CLOUDINARY_KEY')); // Essayer les deux variantes
-                $apiSecret = env('CLOUDINARY_API_SECRET', env('CLOUDINARY_SECRET')); // Essayer les deux variantes
+                $result = $uploadApi->destroy($publicId, [
+                    'resource_type' => $resourceType
+                ]);
                 
-                // Vérifier la configuration
-                if (!$cloudName || !$apiKey || !$apiSecret) {
-                    \Log::error('Configuration Cloudinary manquante pour suppression', [
-                        'cloud_name' => $cloudName ? 'Défini' : 'Non défini',
-                        'api_key' => $apiKey ? 'Défini' : 'Non défini',
-                        'api_secret' => $apiSecret ? 'Défini' : 'Non défini'
-                    ]);
-                    return false;
-                }
+                \Log::info('Résultat de la suppression Cloudinary', $result);
+                return $result;
+            } elseif (class_exists('CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary')) {
+                \Log::info('Tentative de suppression avec la façade Cloudinary Laravel', [
+                    'public_id' => $publicId,
+                    'resource_type' => $resourceType
+                ]);
                 
-                // Utiliser le SDK Cloudinary si disponible
-                if (class_exists('Cloudinary\Cloudinary')) {
-                    $config = [
-                        'cloud' => [
-                            'cloud_name' => $cloudName,
-                            'api_key' => $apiKey,
-                            'api_secret' => $apiSecret
-                        ]
-                    ];
-                    
-                    $cloudinary = new \Cloudinary\Cloudinary($config);
-                    $uploadApi = $cloudinary->uploadApi();
-                    $result = $uploadApi->destroy($publicId, ['resource_type' => $resourceType]);
-                    
-                    \Log::info('Résultat de la suppression Cloudinary (SDK)', ['result' => $result]);
-                    return $result;
-                }
-                // Utiliser la façade Laravel si disponible
-                elseif (class_exists('CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary')) {
-                    $result = \CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::destroy($publicId, ['resource_type' => $resourceType]);
-                    
-                    \Log::info('Résultat de la suppression Cloudinary (Façade)', ['result' => $result]);
-                    return $result;
-                }
-                else {
-                    \Log::error('Aucun SDK Cloudinary disponible pour suppression');
-                    return false;
-                }
+                $result = \CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::destroy($publicId, [
+                    'resource_type' => $resourceType
+                ]);
+                
+                \Log::info('Résultat de la suppression Cloudinary', ['result' => $result]);
+                return ['status' => 'success', 'result' => $result];
+            } else {
+                \Log::error('Aucun SDK Cloudinary disponible');
+                return ['status' => 'error', 'message' => 'Aucun SDK Cloudinary disponible'];
+            }
+        } catch (\Exception $e) {
+            \Log::error('Erreur lors de la suppression sur Cloudinary', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return ['status' => 'error', 'message' => $e->getMessage()];
+        }
+    }
+    
+    /**
+     * Extraire l'ID public d'une URL Cloudinary
+     */
+    private function extractPublicIdFromUrl($url)
+    {
+        // Si l'URL est vide, retourner null
+        if (empty($url)) {
+            return null;
+        }
+        
+        try {
+            // Vérifier si c'est une URL Cloudinary
+            if (!$this->isCloudinaryUrl($url)) {
+                return null;
             }
             
-            \Log::warning('Impossible de trouver le segment "upload" dans l\'URL', ['url' => $url]);
-            return false;
+            // Extraire l'ID public
+            $parsedUrl = parse_url($url);
+            $path = $parsedUrl['path'];
+            
+            // Format typique: /v1234567890/folder/public_id.extension
+            // ou /video/upload/v1234567890/folder/public_id.extension
+            
+            // Supprimer le préfixe "/video/upload" ou "/image/upload" s'il existe
+            $path = preg_replace('#^/(video|image)/upload/#', '/', $path);
+            
+            // Supprimer le préfixe "/v1234567890/"
+            $path = preg_replace('#^/v\d+/#', '/', $path);
+            
+            // Supprimer l'extension
+            $path = preg_replace('#\.[^.]+$#', '', $path);
+            
+            // Supprimer le premier slash
+            if (strpos($path, '/') === 0) {
+                $path = substr($path, 1);
+            }
+            
+            \Log::info('ID public extrait de l\'URL', ['url' => $url, 'public_id' => $path]);
+            
+            return $path;
         } catch (\Exception $e) {
-            \Log::error('Erreur lors de la suppression du fichier Cloudinary', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'url' => $url
+            \Log::error('Erreur lors de l\'extraction de l\'ID public', [
+                'url' => $url,
+                'message' => $e->getMessage()
             ]);
-            return false;
+            
+            return null;
         }
     }
 
@@ -909,6 +1045,77 @@ class MediaController extends Controller
         }
         
         return false;
+    }
+    
+    /**
+     * Optimiser les options d'upload pour les vidéos
+     */
+    private function optimizeVideoUploadOptions($file, $options = [])
+    {
+        // Vérifier si c'est une vidéo
+        $mimeType = $file->getMimeType();
+        $extension = strtolower($file->getClientOriginalExtension());
+        
+        // Extensions et types MIME de vidéo
+        $videoExtensions = ['mp4', 'mov', 'avi', 'webm', 'mkv', 'flv', 'wmv', 'm4v', '3gp', 'mpg', 'mpeg'];
+        $videoMimeTypes = [
+            'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm',
+            'video/x-matroska', 'video/x-flv', 'video/x-ms-wmv', 'video/3gpp'
+        ];
+        
+        $isVideo = in_array($extension, $videoExtensions) || 
+                  (strpos($mimeType, 'video/') !== false) ||
+                  in_array($mimeType, $videoMimeTypes);
+        
+        if (!$isVideo) {
+            return $options;
+        }
+        
+        // Options de base pour les vidéos
+        $videoOptions = array_merge($options, [
+            'resource_type' => 'video',
+            'chunk_size' => 6000000, // 6MB chunks pour les vidéos volumineuses
+            'timeout' => 120 // Timeout plus long pour les vidéos
+        ]);
+        
+        // Formats problématiques qui nécessitent une optimisation
+        $problematicExtensions = ['mov', 'avi', 'wmv', 'flv'];
+        $problematicMimeTypes = ['video/quicktime', 'video/x-msvideo', 'video/x-ms-wmv', 'video/x-flv'];
+        
+        $needsOptimization = in_array($extension, $problematicExtensions) || 
+                           in_array($mimeType, $problematicMimeTypes);
+        
+        if ($needsOptimization) {
+            \Log::info("Optimisation de la vidéo pour le format: {$extension} ({$mimeType})", [
+                'file_name' => $file->getClientOriginalName(),
+                'size' => $file->getSize()
+            ]);
+            
+            // Options pour optimiser les formats problématiques
+            $videoOptions = array_merge($videoOptions, [
+                'eager' => [
+                    [
+                        'streaming_profile' => 'hd', // Profil de streaming HD
+                        'format' => 'mp4' // Convertir en MP4
+                    ]
+                ],
+                'eager_async' => true, // Traitement asynchrone des transformations
+                'eager_notification_url' => env('APP_URL') . '/api/cloudinary-webhook' // URL de notification (optionnel)
+            ]);
+        }
+        
+        // Pour les vidéos volumineuses
+        if ($file->getSize() > 50 * 1024 * 1024) { // Plus de 50MB
+            \Log::info("Vidéo volumineuse détectée: " . ($file->getSize() / (1024 * 1024)) . " MB");
+            
+            // Options supplémentaires pour les vidéos volumineuses
+            $videoOptions = array_merge($videoOptions, [
+                'chunk_size' => 10000000, // 10MB chunks
+                'timeout' => 300 // 5 minutes
+            ]);
+        }
+        
+        return $videoOptions;
     }
     
     /**

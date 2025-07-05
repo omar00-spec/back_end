@@ -61,12 +61,138 @@ class MediaController extends BaseMediaController
      */
     public function store(Request $request)
     {
-        Log::info('Admin\MediaController::store appelé', [
-            'request_has_file' => $request->hasFile('file'),
-            'request_all' => $request->all(),
-            'request_files' => $request->allFiles()
+        \Log::info('Tentative de création de média par admin', [
+            'admin_id' => auth()->id(),
+            'request_data' => $request->except(['file']),
+            'file_present' => $request->hasFile('file')
         ]);
-        return parent::store($request);
+        
+        try {
+            $request->validate([
+                'title' => 'required|string|max:255',
+                'category_id' => 'required|exists:categories,id',
+                'type' => 'required|in:photo,video,document',
+                'file' => 'required|file|max:102400', // 100MB max
+            ]);
+            
+            if ($request->hasFile('file')) {
+                $file = $request->file('file');
+                
+                // Vérifier le type de fichier
+                $fileType = $file->getMimeType();
+                $fileExtension = strtolower($file->getClientOriginalExtension());
+                
+                \Log::info('Fichier reçu pour création', [
+                    'nom' => $file->getClientOriginalName(),
+                    'extension' => $fileExtension,
+                    'type_mime' => $fileType,
+                    'taille' => $file->getSize()
+                ]);
+                
+                // Vérifier la cohérence entre le type demandé et le fichier
+                $isValidType = true;
+                
+                if ($request->type === 'photo' && !str_starts_with($fileType, 'image/')) {
+                    $isValidType = false;
+                    \Log::warning('Type de fichier incohérent pour une photo', [
+                        'type_demandé' => 'photo',
+                        'mime_type' => $fileType
+                    ]);
+                } elseif ($request->type === 'video') {
+                    // Pour les vidéos, on est plus permissif car certains formats peuvent avoir des types MIME variés
+                    $videoExtensions = ['mp4', 'mov', 'avi', 'webm', 'mkv', 'flv', 'wmv', 'm4v', '3gp', 'mpg', 'mpeg'];
+                    $isVideoByExtension = in_array($fileExtension, $videoExtensions);
+                    $isVideoByMimeType = str_starts_with($fileType, 'video/');
+                    
+                    if (!$isVideoByExtension && !$isVideoByMimeType) {
+                        $isValidType = false;
+                        \Log::warning('Type de fichier incohérent pour une vidéo', [
+                            'type_demandé' => 'video',
+                            'extension' => $fileExtension,
+                            'mime_type' => $fileType
+                        ]);
+                    }
+                    
+                    // Vérifier si c'est un format problématique
+                    $problematicExtensions = ['mov', 'avi', 'wmv', 'flv'];
+                    $problematicMimeTypes = ['video/quicktime', 'video/x-msvideo', 'video/x-ms-wmv', 'video/x-flv'];
+                    
+                    if (in_array($fileExtension, $problematicExtensions) || in_array($fileType, $problematicMimeTypes)) {
+                        \Log::warning('Format vidéo potentiellement problématique détecté', [
+                            'extension' => $fileExtension,
+                            'mime_type' => $fileType,
+                            'taille' => $file->getSize()
+                        ]);
+                    }
+                }
+                
+                if (!$isValidType) {
+                    return response()->json([
+                        'message' => 'Le type de fichier ne correspond pas au type de média sélectionné'
+                    ], 400);
+                }
+                
+                // Créer le média
+                $result = app(\App\Http\Controllers\MediaController::class)->upload($request);
+                
+                if ($result->getStatusCode() !== 200) {
+                    \Log::error('Erreur lors de l\'upload du média', [
+                        'status_code' => $result->getStatusCode(),
+                        'response' => json_decode($result->getContent(), true)
+                    ]);
+                    
+                    return $result;
+                }
+                
+                $responseData = json_decode($result->getContent(), true);
+                
+                if (!isset($responseData['id'])) {
+                    \Log::error('Réponse d\'upload invalide', [
+                        'response' => $responseData
+                    ]);
+                    
+                    return response()->json([
+                        'message' => 'Erreur lors de la création du média: réponse invalide'
+                    ], 500);
+                }
+                
+                // Récupérer le média créé
+                $media = \App\Models\Media::find($responseData['id']);
+                
+                if (!$media) {
+                    \Log::error('Média non trouvé après création', [
+                        'media_id' => $responseData['id']
+                    ]);
+                    
+                    return response()->json([
+                        'message' => 'Erreur lors de la création du média: média non trouvé'
+                    ], 500);
+                }
+                
+                \Log::info('Média créé avec succès', [
+                    'media_id' => $media->id,
+                    'title' => $media->title,
+                    'file_path' => $media->file_path
+                ]);
+                
+                return response()->json($media);
+            } else {
+                \Log::error('Aucun fichier fourni pour la création du média');
+                
+                return response()->json([
+                    'message' => 'Aucun fichier fourni'
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Exception lors de la création du média', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'message' => 'Erreur lors de la création du média: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

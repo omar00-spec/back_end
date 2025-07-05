@@ -24,7 +24,30 @@ use App\Http\Controllers\{
 
 // Route de ping pour vérifier l'état du serveur
 Route::get('/ping', function () {
-    return response()->json(['status' => 'ok', 'message' => 'Server is running']);
+    return response()->json(['status' => 'ok', 'message' => 'Server is running', 'timestamp' => now()]);
+});
+
+// Route pour le webhook de Cloudinary (notifications de traitement des vidéos)
+Route::post('/cloudinary-webhook', function (Request $request) {
+    \Log::info('Notification Cloudinary reçue', [
+        'data' => $request->all()
+    ]);
+    
+    // Vérifier si c'est une notification de traitement vidéo terminé
+    if ($request->has('notification_type') && $request->notification_type === 'eager') {
+        $publicId = $request->public_id ?? null;
+        $eager = $request->eager ?? [];
+        
+        \Log::info('Traitement vidéo Cloudinary terminé', [
+            'public_id' => $publicId,
+            'eager_transformations' => $eager
+        ]);
+        
+        // Vous pourriez mettre à jour votre base de données ici si nécessaire
+        // Par exemple, marquer la vidéo comme "traitée" ou stocker les URLs des versions optimisées
+    }
+    
+    return response()->json(['status' => 'success']);
 });
 
 // Route de diagnostic pour les médias
