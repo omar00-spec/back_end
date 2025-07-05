@@ -218,9 +218,23 @@ class MediaController extends Controller
                                 'resource_type' => $resourceType
                             ];
                             
-                            // Optimiser les options pour les vidéos
+                            // Options spécifiques pour les vidéos
                             if ($request->type === 'video') {
-                                $uploadOptions = $this->optimizeVideoUploadOptions($file, $uploadOptions);
+                                // Ajouter des options pour optimiser le traitement des vidéos
+                                $uploadOptions['chunk_size'] = 6000000; // 6MB chunks pour les vidéos volumineuses
+                                $uploadOptions['timeout'] = 120; // Timeout plus long pour les vidéos
+                                
+                                // Essayer de détecter le codec et le format
+                                $mimeType = $file->getMimeType();
+                                \Log::info("Type MIME de la vidéo: {$mimeType}");
+                                
+                                // Formats qui peuvent nécessiter une conversion
+                                if (strpos($mimeType, 'quicktime') !== false || 
+                                    strpos($mimeType, 'x-msvideo') !== false || 
+                                    in_array($file->getClientOriginalExtension(), ['mov', 'avi', 'wmv'])) {
+                                    \Log::info("Format vidéo qui pourrait nécessiter une conversion: {$mimeType}");
+                                    // Laisser Cloudinary gérer la conversion
+                                }
                             }
                             
                             $uploadResult = $uploadApi->upload($filePath, $uploadOptions);
@@ -494,8 +508,21 @@ class MediaController extends Controller
                             
                             // Options spécifiques pour les vidéos
                             if ($mediaType === 'video') {
-                                // Optimiser les options pour les vidéos
-                                $uploadOptions = $this->optimizeVideoUploadOptions($file, $uploadOptions);
+                                // Ajouter des options pour optimiser le traitement des vidéos
+                                $uploadOptions['chunk_size'] = 6000000; // 6MB chunks pour les vidéos volumineuses
+                                $uploadOptions['timeout'] = 120; // Timeout plus long pour les vidéos
+                                
+                                // Essayer de détecter le codec et le format
+                                $mimeType = $file->getMimeType();
+                                \Log::info("Type MIME de la vidéo lors de la mise à jour: {$mimeType}");
+                                
+                                // Formats qui peuvent nécessiter une conversion
+                                if (strpos($mimeType, 'quicktime') !== false || 
+                                    strpos($mimeType, 'x-msvideo') !== false || 
+                                    in_array($file->getClientOriginalExtension(), ['mov', 'avi', 'wmv'])) {
+                                    \Log::info("Format vidéo qui pourrait nécessiter une conversion lors de la mise à jour: {$mimeType}");
+                                    // Laisser Cloudinary gérer la conversion
+                                }
                             }
                             
                             $uploadResult = $uploadApi->upload($filePath, $uploadOptions);
@@ -1057,7 +1084,7 @@ class MediaController extends Controller
         $extension = strtolower($file->getClientOriginalExtension());
         
         // Extensions et types MIME de vidéo
-        $videoExtensions = ['mp4', 'mov', 'avi', 'webm', 'mkv', 'flv', 'wmv', 'm4v', '3gp', 'mpg', 'mpeg'];
+        $videoExtensions = ['mp4', 'mov', 'avi', 'webm', 'mkv', 'flv', 'wmv', 'm4v', '3gp', 'mpeg', 'mpg'];
         $videoMimeTypes = [
             'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm',
             'video/x-matroska', 'video/x-flv', 'video/x-ms-wmv', 'video/3gpp'
