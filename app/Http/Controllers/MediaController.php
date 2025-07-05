@@ -812,8 +812,8 @@ class MediaController extends Controller
                     'resource_type' => $resourceType
                 ]);
                 
-                \Log::info('Résultat de la suppression Cloudinary', $result);
-                return $result;
+                \Log::info('Résultat de la suppression Cloudinary', ['result' => json_encode($result)]);
+                return ['status' => 'success', 'result' => json_encode($result)];
             } elseif (class_exists('CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary')) {
                 \Log::info('Tentative de suppression avec la façade Cloudinary Laravel', [
                     'public_id' => $publicId,
@@ -824,8 +824,8 @@ class MediaController extends Controller
                     'resource_type' => $resourceType
                 ]);
                 
-                \Log::info('Résultat de la suppression Cloudinary', ['result' => $result]);
-                return ['status' => 'success', 'result' => $result];
+                \Log::info('Résultat de la suppression Cloudinary', ['result' => json_encode($result)]);
+                return ['status' => 'success', 'result' => json_encode($result)];
             } else {
                 \Log::error('Aucun SDK Cloudinary disponible');
                 return ['status' => 'error', 'message' => 'Aucun SDK Cloudinary disponible'];
@@ -1308,6 +1308,133 @@ class MediaController extends Controller
             return response()->json([
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
+            ], 500);
+        }
+    }
+
+    /**
+     * Upload un fichier média sur Cloudinary ou en local
+     * Cette méthode est utilisée par Admin\MediaController::store
+     */
+    public function upload(Request $request)
+    {
+        \Log::info('Début de la méthode upload de MediaController', [
+            'request_all' => $request->except(['file']),
+            'request_has_file' => $request->hasFile('file')
+        ]);
+        
+        // Validation des données
+        $validator = Validator::make($request->all(), [
+            'title' => 'required|string|max:255',
+            'type' => 'required|string|in:photo,video,document',
+            'category_id' => 'nullable|exists:categories,id',
+            'file' => 'required|file|max:102400', // 100MB max
+        ]);
+
+        if ($validator->fails()) {
+            \Log::error('Validation échouée pour l\'upload du média', [
+                'errors' => $validator->errors()->toArray()
+            ]);
+            
+            return response()->json([
+                'message' => 'Validation échouée',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        
+        try {
+            // Récupérer le fichier
+            $file = $request->file('file');
+            
+            if (!$file || !$file->isValid()) {
+                \Log::error('Fichier invalide ou non reçu dans upload');
+                return response()->json([
+                    'message' => 'Le fichier est invalide ou n\'a pas été reçu',
+                    'error' => 'file_invalid'
+                ], 400);
+            }
+            
+            // Déterminer le dossier cible sur Cloudinary
+            $folder = 'acos_football/' . $request->type . 's';
+            
+            // Déterminer le type de ressource pour Cloudinary
+            $resourceType = 'auto';
+            if ($request->type === 'video') {
+                $resourceType = 'video';
+            } elseif ($request->type === 'photo') {
+                $resourceType = 'image';
+            }
+            
+            // Tentative d'upload sur Cloudinary
+            $cloudName = env('CLOUDINARY_CLOUD_NAME');
+            $apiKey = env('CLOUDINARY_KEY');
+            $apiSecret = env('CLOUDINARY_SECRET');
+            
+            if (!$cloudName || !$apiKey || !$apiSecret) {
+                \Log::error("Configuration Cloudinary incomplète dans upload");
+                
+                // Fallback vers le stockage local
+                $filename = 'media_' . time() . '_' . $file->getClientOriginalName();
+                $path = $file->storeAs('public/media', $filename);
+                $uploadedFileUrl = asset('storage/media/' . $filename);
+            } else {
+                // Obtenir le chemin réel du fichier
+                $filePath = $file->getRealPath();
+                
+                // Configuration Cloudinary
+                $config = [
+                    'cloud' => [
+                        'cloud_name' => $cloudName,
+                        'api_key' => $apiKey,
+                        'api_secret' => $apiSecret
+                    ]
+                ];
+                
+                // Utiliser le SDK Cloudinary
+                $cloudinary = new \Cloudinary\Cloudinary($config);
+                $uploadApi = $cloudinary->uploadApi();
+                
+                // Options d'upload
+                $uploadOptions = [
+                    'folder' => $folder,
+                    'resource_type' => $resourceType
+                ];
+                
+                // Options spéciales pour les vidéos
+                if ($request->type === 'video') {
+                    $uploadOptions['chunk_size'] = 6000000; // 6MB chunks
+                    $uploadOptions['timeout'] = 120; // 2 minutes timeout
+                }
+                
+                // Upload du fichier
+                $uploadResult = $uploadApi->upload($filePath, $uploadOptions);
+                $uploadedFileUrl = $uploadResult['secure_url'];
+            }
+            
+            // Créer l'entrée dans la base de données
+            $media = new Media();
+            $media->title = $request->title;
+            $media->type = $request->type;
+            $media->category_id = $request->category_id;
+            $media->file_path = $uploadedFileUrl;
+            $media->save();
+            
+            \Log::info('Média uploadé avec succès', [
+                'id' => $media->id,
+                'title' => $media->title,
+                'file_path' => $media->file_path
+            ]);
+            
+            return response()->json($media);
+        } catch (\Exception $e) {
+            \Log::error('Erreur lors de l\'upload du média', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'message' => 'Erreur lors de l\'upload du média: ' . $e->getMessage(),
+                'error' => $e->getMessage()
             ], 500);
         }
     }
